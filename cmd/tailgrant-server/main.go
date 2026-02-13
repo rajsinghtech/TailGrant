@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -96,17 +97,22 @@ func main() {
 	defer func() { _ = ln.Close() }()
 	slog.Info("listening", "addr", cfg.Server.ListenAddr, "tls", useTLS)
 
-	tc, err := client.Dial(client.Options{
-		HostPort:  "passthrough:///" + cfg.Temporal.Address,
+	temporalOpts := client.Options{
+		HostPort:  cfg.Temporal.Address,
 		Namespace: cfg.Temporal.Namespace,
-		ConnectionOptions: client.ConnectionOptions{
+	}
+	if strings.HasSuffix(strings.Split(cfg.Temporal.Address, ":")[0], ".ts.net") {
+		slog.Info("using tsnet dialer for temporal", "address", cfg.Temporal.Address)
+		temporalOpts.HostPort = "passthrough:///" + cfg.Temporal.Address
+		temporalOpts.ConnectionOptions = client.ConnectionOptions{
 			DialOptions: []grpc.DialOption{
 				grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
 					return srv.Dial(ctx, "tcp", addr)
 				}),
 			},
-		},
-	})
+		}
+	}
+	tc, err := client.Dial(temporalOpts)
 	if err != nil {
 		slog.Error("failed to connect to temporal", "error", err)
 		os.Exit(1)
