@@ -42,11 +42,24 @@ func main() {
 		hostname = "tailgrant"
 	}
 
+	tsClient := tsapi.NewClient(
+		cfg.Tailscale.OAuthClientID,
+		cfg.Tailscale.OAuthClientSecret,
+		cfg.Tailscale.Tailnet,
+	)
+
+	authKey, err := tsapi.CreateAuthKey(ctx, tsClient, cfg.Worker.Tags, cfg.Worker.Ephemeral)
+	if err != nil {
+		slog.Error("failed to create auth key", "error", err)
+		os.Exit(1)
+	}
+
 	stateDir := cfg.Tailscale.StateDir + "-worker"
 
 	srv := &tsnet.Server{
 		Hostname:  hostname + "-worker",
 		Ephemeral: cfg.Worker.Ephemeral,
+		AuthKey:   authKey,
 	}
 	if cfg.Tailscale.StateDir != "" {
 		srv.Dir = stateDir
@@ -54,19 +67,13 @@ func main() {
 	if len(cfg.Worker.Tags) > 0 {
 		srv.AdvertiseTags = cfg.Worker.Tags
 	}
-	defer srv.Close()
+	defer func() { _ = srv.Close() }()
 
 	if _, err := srv.Up(ctx); err != nil {
 		slog.Error("tsnet failed to start", "error", err)
 		os.Exit(1)
 	}
 	slog.Info("tsnet is up", "hostname", hostname+"-worker")
-
-	tsClient := tsapi.NewClient(
-		cfg.Tailscale.OAuthClientID,
-		cfg.Tailscale.OAuthClientSecret,
-		cfg.Tailscale.Tailnet,
-	)
 
 	tc, err := client.Dial(client.Options{
 		HostPort:  cfg.Temporal.Address,
@@ -135,7 +142,7 @@ func main() {
 		<-sigCh
 		slog.Info("shutting down worker")
 		cancel()
-		srv.Close()
+		_ = srv.Close()
 	}()
 
 	if err := w.Run(worker.InterruptCh()); err != nil {

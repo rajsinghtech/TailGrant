@@ -16,6 +16,8 @@ tailscale:
 server:
   listenAddr: ":443"
   useTLS: true              # use tsnet ListenTLS
+  tags:
+    - "tag:tailgrant"
 
 worker:
   ephemeral: true

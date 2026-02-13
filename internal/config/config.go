@@ -30,8 +30,9 @@ type TailscaleConfig struct {
 }
 
 type ServerConfig struct {
-	ListenAddr string `yaml:"listenAddr"`
-	UseTLS     *bool  `yaml:"useTLS"`
+	ListenAddr string   `yaml:"listenAddr"`
+	UseTLS     *bool    `yaml:"useTLS"`
+	Tags       []string `yaml:"tags"`
 }
 
 type WorkerConfig struct {

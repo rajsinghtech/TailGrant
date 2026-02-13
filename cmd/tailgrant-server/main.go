@@ -52,13 +52,29 @@ func main() {
 		hostname = "tailgrant"
 	}
 
+	tsClient := tsapi.NewClient(
+		cfg.Tailscale.OAuthClientID,
+		cfg.Tailscale.OAuthClientSecret,
+		cfg.Tailscale.Tailnet,
+	)
+
+	authKey, err := tsapi.CreateAuthKey(ctx, tsClient, cfg.Server.Tags, false)
+	if err != nil {
+		slog.Error("failed to create auth key", "error", err)
+		os.Exit(1)
+	}
+
 	srv := &tsnet.Server{
 		Hostname: hostname,
+		AuthKey:  authKey,
 	}
 	if cfg.Tailscale.StateDir != "" {
 		srv.Dir = cfg.Tailscale.StateDir
 	}
-	defer srv.Close()
+	if len(cfg.Server.Tags) > 0 {
+		srv.AdvertiseTags = cfg.Server.Tags
+	}
+	defer func() { _ = srv.Close() }()
 
 	if _, err := srv.Up(ctx); err != nil {
 		slog.Error("tsnet failed to start", "error", err)
@@ -83,7 +99,7 @@ func main() {
 		slog.Error("failed to listen", "addr", cfg.Server.ListenAddr, "tls", useTLS, "error", err)
 		os.Exit(1)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	slog.Info("listening", "addr", cfg.Server.ListenAddr, "tls", useTLS)
 
 	tc, err := client.Dial(client.Options{
@@ -108,12 +124,6 @@ func main() {
 		slog.Error("failed to create static fs", "error", err)
 		os.Exit(1)
 	}
-
-	tsClient := tsapi.NewClient(
-		cfg.Tailscale.OAuthClientID,
-		cfg.Tailscale.OAuthClientSecret,
-		cfg.Tailscale.Tailnet,
-	)
 
 	router := server.NewRouter(lc, tc, tsClient, grantStore, cfg.Temporal.TaskQueue, staticFS)
 

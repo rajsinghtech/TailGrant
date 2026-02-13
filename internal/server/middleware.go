@@ -25,21 +25,21 @@ func WhoIsMiddleware(lc *local.Client) func(http.Handler) http.Handler {
 			if err != nil {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
-				json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized: " + err.Error()})
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized: " + err.Error()})
 				return
 			}
 
 			if who.Node == nil || who.UserProfile == nil {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
-				json.NewEncoder(w).Encode(map[string]string{"error": "incomplete identity"})
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "incomplete identity"})
 				return
 			}
 
 			if who.Node.IsTagged() {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusForbidden)
-				json.NewEncoder(w).Encode(map[string]string{"error": "tagged nodes cannot request grants"})
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "tagged nodes cannot request grants"})
 				return
 			}
 

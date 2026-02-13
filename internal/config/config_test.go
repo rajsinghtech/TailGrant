@@ -238,7 +238,7 @@ tailscale:
 	}
 	t.Cleanup(func() {
 		for k := range envVars {
-			os.Unsetenv(k)
+			_ = os.Unsetenv(k)
 		}
 	})
 
@@ -276,9 +276,9 @@ tailscale:
 	}
 
 	// Ensure env vars are unset so YAML values are preserved
-	os.Unsetenv("TS_OAUTH_CLIENT_ID")
-	os.Unsetenv("TS_OAUTH_CLIENT_SECRET")
-	os.Unsetenv("TS_TAILNET")
+	_ = os.Unsetenv("TS_OAUTH_CLIENT_ID")
+	_ = os.Unsetenv("TS_OAUTH_CLIENT_SECRET")
+	_ = os.Unsetenv("TS_TAILNET")
 	cfg, err := Load(configPath)
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
