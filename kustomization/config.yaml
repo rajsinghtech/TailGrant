@@ -11,6 +11,8 @@ tailscale:
 server:
   listenAddr: ":443"
   useTLS: true
+  tags:
+    - "tag:k8s"
 
 worker:
   ephemeral: true
