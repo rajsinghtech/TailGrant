@@ -71,7 +71,7 @@ func main() {
 	slog.Info("tsnet is up", "hostname", hostname+"-worker")
 
 	tc, err := client.Dial(client.Options{
-		HostPort:  cfg.Temporal.Address,
+		HostPort:  "passthrough:///" + cfg.Temporal.Address,
 		Namespace: cfg.Temporal.Namespace,
 		ConnectionOptions: client.ConnectionOptions{
 			DialOptions: []grpc.DialOption{

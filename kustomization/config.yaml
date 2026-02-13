@@ -1,5 +1,5 @@
 temporal:
-  address: "temporal-frontend.temporal.svc.cluster.local:7233"
+  address: "ottawa-temporal.keiretsu.ts.net:7233"
   namespace: "default"
   taskQueue: "tailgrant"
 

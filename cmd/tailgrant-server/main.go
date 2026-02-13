@@ -97,7 +97,7 @@ func main() {
 	slog.Info("listening", "addr", cfg.Server.ListenAddr, "tls", useTLS)
 
 	tc, err := client.Dial(client.Options{
-		HostPort:  cfg.Temporal.Address,
+		HostPort:  "passthrough:///" + cfg.Temporal.Address,
 		Namespace: cfg.Temporal.Namespace,
 		ConnectionOptions: client.ConnectionOptions{
 			DialOptions: []grpc.DialOption{
