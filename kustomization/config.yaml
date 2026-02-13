@@ -1,0 +1,46 @@
+temporal:
+  address: "ottawa-temporal.keiretsu.ts.net:7233"
+  namespace: "default"
+  taskQueue: "tailgrant"
+
+tailscale:
+  hostname: "tailgrant"
+  stateDir: "/var/lib/tailgrant/tsnet"
+  tailnet: "keiretsu.ts.net"
+
+server:
+  listenAddr: ":443"
+  useTLS: true
+
+worker:
+  ephemeral: true
+  tags:
+    - "tag:tailgrant-worker"
+
+grants:
+  - name: "ssh-access"
+    description: "Temporary SSH access to a target node"
+    tags:
+      - "tag:ssh-granted"
+    maxDuration: "4h"
+    riskLevel: "low"
+    approvers: []
+
+  - name: "admin-access"
+    description: "Full administrative access to a target node"
+    tags:
+      - "tag:admin-granted"
+    maxDuration: "2h"
+    riskLevel: "high"
+    approvers:
+      - "admin@example.com"
+      - "secops@example.com"
+
+  - name: "debug-access"
+    description: "Debug-level access for troubleshooting"
+    tags:
+      - "tag:debug-granted"
+    maxDuration: "1h"
+    riskLevel: "medium"
+    approvers:
+      - "oncall@example.com"

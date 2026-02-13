@@ -18,6 +18,5 @@ tsnet-*/
 *.tar
 coverage.out
 
-# Config with secrets
-config.yaml
+# Config
 !config.example.yaml
