@@ -1,0 +1,51 @@
+# TailGrant configuration
+
+temporal:
+  address: "temporal.tail1234.ts.net:7233"
+  namespace: "default"      # Temporal namespace
+  taskQueue: "tailgrant"    # Temporal task queue name
+
+tailscale:
+  hostname: "tailgrant"     # tsnet hostname
+  stateDir: "/var/lib/tailgrant/tsnet"
+  # OAuth credentials (worker only, for Tailscale API)
+  oauthClientID: ""
+  oauthClientSecret: ""
+  tailnet: "example.com"    # tailnet name for API calls
+
+server:
+  listenAddr: ":443"
+  useTLS: true              # use tsnet ListenTLS
+
+worker:
+  ephemeral: true
+  tags:
+    - "tag:tailgrant-worker"
+
+grants:
+  - name: "ssh-access"
+    description: "Temporary SSH access to a target node"
+    tags:
+      - "tag:ssh-granted"
+    maxDuration: "4h"
+    riskLevel: "low"        # low | medium | high
+    approvers: []           # empty = auto-approve for low risk
+
+  - name: "admin-access"
+    description: "Full administrative access to a target node"
+    tags:
+      - "tag:admin-granted"
+    maxDuration: "2h"
+    riskLevel: "high"
+    approvers:
+      - "admin@example.com"
+      - "secops@example.com"
+
+  - name: "debug-access"
+    description: "Debug-level access for troubleshooting"
+    tags:
+      - "tag:debug-granted"
+    maxDuration: "1h"
+    riskLevel: "medium"
+    approvers:
+      - "oncall@example.com"

@@ -1,0 +1,23 @@
+# Binaries
+tailgrant-server
+tailgrant-worker
+*.exe
+
+# tsnet state
+tsnet-*/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Build artifacts
+*.tar
+coverage.out
+
+# Config with secrets
+config.yaml
+!config.example.yaml

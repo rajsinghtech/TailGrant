@@ -1,0 +1,221 @@
+package server
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/rajsinghtech/tailgrant/internal/grant"
+	"go.temporal.io/sdk/client"
+	tailscale "tailscale.com/client/tailscale/v2"
+)
+
+type Handlers struct {
+	TemporalClient client.Client
+	TSClient       *tailscale.Client
+	GrantTypes     grant.GrantTypeStore
+	TaskQueue      string
+}
+
+type createGrantRequest struct {
+	GrantTypeName string `json:"grantTypeName"`
+	TargetNodeID  string `json:"targetNodeID"`
+	Duration      string `json:"duration"`
+	Reason        string `json:"reason"`
+}
+
+func (h *Handlers) HandleCreateGrant(w http.ResponseWriter, r *http.Request) {
+	who := WhoIsFromContext(r.Context())
+	if who == nil {
+		writeError(w, http.StatusUnauthorized, "missing identity")
+		return
+	}
+
+	var req createGrantRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	gt, err := h.GrantTypes.Get(req.GrantTypeName)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	dur, err := time.ParseDuration(req.Duration)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid duration: "+err.Error())
+		return
+	}
+	if dur > gt.MaxDuration {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("duration %s exceeds max %s for grant type %q", dur, gt.MaxDuration, gt.Name))
+		return
+	}
+
+	id := uuid.New().String()
+	grantReq := grant.GrantRequest{
+		ID:            id,
+		Requester:     who.UserProfile.LoginName,
+		RequesterNode: string(who.Node.StableID),
+		GrantTypeName: req.GrantTypeName,
+		TargetNodeID:  req.TargetNodeID,
+		Duration:      dur,
+		Reason:        req.Reason,
+		RequestedAt:   time.Now(),
+	}
+
+	workflowID := fmt.Sprintf("grant-%s", id)
+	opts := client.StartWorkflowOptions{
+		ID:        workflowID,
+		TaskQueue: h.TaskQueue,
+	}
+
+	_, err = h.TemporalClient.ExecuteWorkflow(r.Context(), opts, grant.GrantWorkflow, grantReq, *gt)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to start workflow: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]string{
+		"id":         id,
+		"workflowID": workflowID,
+		"status":     "started",
+	})
+}
+
+func (h *Handlers) HandleApproveGrant(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	who := WhoIsFromContext(r.Context())
+	if who == nil {
+		writeError(w, http.StatusUnauthorized, "missing identity")
+		return
+	}
+
+	err := h.TemporalClient.SignalWorkflow(r.Context(), fmt.Sprintf("approval-%s", id), "", "approve", grant.ApproveSignal{
+		ApprovedBy: who.UserProfile.LoginName,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to signal approval: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"id":     id,
+		"status": "approved",
+	})
+}
+
+func (h *Handlers) HandleDenyGrant(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	who := WhoIsFromContext(r.Context())
+	if who == nil {
+		writeError(w, http.StatusUnauthorized, "missing identity")
+		return
+	}
+
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	err := h.TemporalClient.SignalWorkflow(r.Context(), fmt.Sprintf("approval-%s", id), "", "deny", grant.DenySignal{
+		DeniedBy: who.UserProfile.LoginName,
+		Reason:   body.Reason,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to signal denial: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"id":     id,
+		"status": "denied",
+	})
+}
+
+func (h *Handlers) HandleRevokeGrant(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	who := WhoIsFromContext(r.Context())
+	if who == nil {
+		writeError(w, http.StatusUnauthorized, "missing identity")
+		return
+	}
+
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	err := h.TemporalClient.SignalWorkflow(r.Context(), fmt.Sprintf("grant-%s", id), "", "revoke", grant.RevokeSignal{
+		RevokedBy: who.UserProfile.LoginName,
+		Reason:    body.Reason,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to signal revocation: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"id":     id,
+		"status": "revoked",
+	})
+}
+
+func (h *Handlers) HandleGetGrant(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	resp, err := h.TemporalClient.QueryWorkflow(r.Context(), fmt.Sprintf("grant-%s", id), "", "status")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to query workflow: "+err.Error())
+		return
+	}
+
+	var state grant.GrantState
+	if err := resp.Get(&state); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to decode workflow state: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, state)
+}
+
+func (h *Handlers) HandleListGrantTypes(w http.ResponseWriter, r *http.Request) {
+	types, err := h.GrantTypes.List()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, types)
+}
+
+func (h *Handlers) HandleListDevices(w http.ResponseWriter, r *http.Request) {
+	if h.TSClient == nil {
+		writeError(w, http.StatusInternalServerError, "tailscale API client not configured")
+		return
+	}
+	devices, err := h.TSClient.Devices().List(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list devices: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, devices)
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}

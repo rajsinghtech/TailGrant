@@ -1,0 +1,59 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tailgrant-worker
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tailgrant-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tailgrant-worker
+    spec:
+      serviceAccountName: tailscale
+      imagePullSecrets:
+        - name: zot-pull-secret
+      containers:
+        - name: tailgrant-worker
+          image: oci.killinit.cc/tailgrant/tailgrant:latest
+          imagePullPolicy: Always
+          command: ["/usr/local/bin/tailgrant-worker"]
+          env:
+            - name: CONFIG_PATH
+              value: /etc/tailgrant/config.yaml
+            - name: TS_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: tailgrant-secrets
+                  key: TS_OAUTH_CLIENT_ID
+            - name: TS_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: tailgrant-secrets
+                  key: TS_OAUTH_CLIENT_SECRET
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/tailgrant
+              readOnly: true
+            - name: tsnet-state
+              mountPath: /var/lib/tailgrant/tsnet
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: config
+          configMap:
+            name: tailgrant-config
+        - name: tsnet-state
+          persistentVolumeClaim:
+            claimName: tailgrant-worker-tsnet
