@@ -33,8 +33,8 @@ grants:
     maxDuration: "2h"
     riskLevel: "high"
     approvers:
-      - "admin@example.com"
-      - "secops@example.com"
+      - "rajsinghtech@github"
+      - "kbpersonal@github"
 
   - name: "debug-access"
     description: "Debug-level access for troubleshooting"
@@ -43,4 +43,4 @@ grants:
     maxDuration: "1h"
     riskLevel: "medium"
     approvers:
-      - "oncall@example.com"
+      - "rajsinghtech@github"
