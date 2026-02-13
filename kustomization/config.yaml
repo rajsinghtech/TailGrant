@@ -58,6 +58,7 @@ grants:
     riskLevel: "medium"
     approvers:
       - "rajsinghtech@github"
+      - "kbpersonal@github"
 
   - name: "temp-admin"
     description: "Temporarily elevate user to admin role"
@@ -68,6 +69,7 @@ grants:
     riskLevel: "high"
     approvers:
       - "rajsinghtech@github"
+      - "kbpersonal@github"
 
   - name: "temp-restore"
     description: "Temporarily restore a suspended user"
@@ -76,3 +78,4 @@ grants:
     riskLevel: "medium"
     approvers:
       - "rajsinghtech@github"
+      - "kbpersonal@github"

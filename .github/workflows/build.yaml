@@ -9,6 +9,7 @@ on:
       - "go.sum"
       - "Dockerfile"
       - "ui/**"
+      - "kustomization/**"
       - ".github/workflows/build.yaml"
   workflow_dispatch:
 
