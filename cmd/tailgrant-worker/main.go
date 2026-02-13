@@ -95,7 +95,8 @@ func main() {
 
 	w := worker.New(tc, cfg.Temporal.TaskQueue, worker.Options{})
 
-	activities := &grant.Activities{TS: tsClient, Temporal: tc}
+	userOps := tsapi.NewUserOperations(tsClient)
+	activities := &grant.Activities{TS: tsClient, Temporal: tc, UserOps: userOps}
 	w.RegisterWorkflow(grant.GrantWorkflow)
 	w.RegisterWorkflow(grant.ApprovalWorkflow)
 	w.RegisterWorkflow(grant.DeviceTagManagerWorkflow)
@@ -104,7 +105,8 @@ func main() {
 
 	slog.Info("starting temporal worker", "taskQueue", cfg.Temporal.TaskQueue)
 
-	// Collect all grant tags for reconciliation.
+	// Collect all grant tags for reconciliation (skip user-action grant types
+	// since they don't manage device tags).
 	grantStore, err := grant.NewYAMLGrantTypeStore(cfg.Grants)
 	if err != nil {
 		slog.Error("failed to create grant store", "error", err)
@@ -112,12 +114,23 @@ func main() {
 	}
 	grantTypes, _ := grantStore.List()
 	var allGrantTags []string
-	seen := make(map[string]struct{})
+	var allPostureKeys []string
+	seenTags := make(map[string]struct{})
+	seenKeys := make(map[string]struct{})
 	for _, gt := range grantTypes {
+		if gt.Action == grant.ActionUserRole || gt.Action == grant.ActionUserRestore {
+			continue
+		}
 		for _, tag := range gt.Tags {
-			if _, ok := seen[tag]; !ok {
-				seen[tag] = struct{}{}
+			if _, ok := seenTags[tag]; !ok {
+				seenTags[tag] = struct{}{}
 				allGrantTags = append(allGrantTags, tag)
+			}
+		}
+		for _, pa := range gt.PostureAttributes {
+			if _, ok := seenKeys[pa.Key]; !ok {
+				seenKeys[pa.Key] = struct{}{}
+				allPostureKeys = append(allPostureKeys, pa.Key)
 			}
 		}
 	}
@@ -128,12 +141,15 @@ func main() {
 		ID:        "reconciliation",
 		TaskQueue: cfg.Temporal.TaskQueue,
 	}
-	reconcileInput := grant.ReconciliationInput{GrantTags: allGrantTags}
+	reconcileInput := grant.ReconciliationInput{
+		GrantTags:        allGrantTags,
+		GrantPostureKeys: allPostureKeys,
+	}
 	_, err = tc.ExecuteWorkflow(ctx, reconcileOpts, grant.ReconciliationWorkflow, reconcileInput)
 	if err != nil {
 		slog.Warn("failed to start reconciliation workflow (may already be running)", "error", err)
 	} else {
-		slog.Info("reconciliation workflow started", "grantTags", allGrantTags)
+		slog.Info("reconciliation workflow started", "grantTags", allGrantTags, "postureKeys", allPostureKeys)
 	}
 
 	sigCh := make(chan os.Signal, 1)

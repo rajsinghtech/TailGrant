@@ -41,12 +41,25 @@ type WorkerConfig struct {
 }
 
 type GrantTypeConfig struct {
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description"`
-	Tags        []string `yaml:"tags"`
-	MaxDuration string   `yaml:"maxDuration"`
-	RiskLevel   string   `yaml:"riskLevel"`
-	Approvers   []string `yaml:"approvers"`
+	Name              string                   `yaml:"name"`
+	Description       string                   `yaml:"description"`
+	Tags              []string                 `yaml:"tags"`
+	PostureAttributes []PostureAttributeConfig `yaml:"postureAttributes"`
+	MaxDuration       string                   `yaml:"maxDuration"`
+	RiskLevel         string                   `yaml:"riskLevel"`
+	Approvers         []string                 `yaml:"approvers"`
+	Action            string                   `yaml:"action"`
+	UserAction        *UserActionConfig        `yaml:"userAction"`
+}
+
+type PostureAttributeConfig struct {
+	Key    string `yaml:"key"`
+	Value  any    `yaml:"value"`
+	Target string `yaml:"target"` // "requester" or "target", defaults to "requester"
+}
+
+type UserActionConfig struct {
+	Role string `yaml:"role"`
 }
 
 func Load(path string) (*Config, error) {

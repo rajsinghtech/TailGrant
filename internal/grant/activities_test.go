@@ -28,4 +28,7 @@ func TestActivities_Registration(t *testing.T) {
 	env.RegisterActivity(a.CheckWorkflowExists)
 	env.RegisterActivity(a.SignalWithStartDeviceTagManager)
 	env.RegisterActivity(a.QueryActiveGrants)
+	env.RegisterActivity(a.SetPostureAttribute)
+	env.RegisterActivity(a.DeletePostureAttribute)
+	env.RegisterActivity(a.GetPostureAttributes)
 }

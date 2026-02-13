@@ -70,6 +70,24 @@ func (d *JSONDuration) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+type ActionType string
+
+const (
+	ActionTag         ActionType = "tag"
+	ActionUserRole    ActionType = "user_role"
+	ActionUserRestore ActionType = "user_restore"
+)
+
+type UserAction struct {
+	Role string `json:"role,omitempty"`
+}
+
+type UserInfo struct {
+	ID     string `json:"id"`
+	Role   string `json:"role"`
+	Status string `json:"status"`
+}
+
 type GrantStatus string
 
 const (
@@ -80,13 +98,22 @@ const (
 	StatusDenied          GrantStatus = "denied"
 )
 
+type PostureAttribute struct {
+	Key    string `json:"key"`
+	Value  any    `json:"value"`
+	Target string `json:"target"` // "requester" or "target"
+}
+
 type GrantType struct {
-	Name        string       `json:"name"`
-	Description string       `json:"description"`
-	Tags        []string     `json:"tags"`
-	MaxDuration JSONDuration `json:"maxDuration"`
-	RiskLevel   RiskLevel    `json:"riskLevel"`
-	Approvers   []string     `json:"approvers"`
+	Name              string             `json:"name"`
+	Description       string             `json:"description"`
+	Tags              []string           `json:"tags,omitempty"`
+	PostureAttributes []PostureAttribute `json:"postureAttributes,omitempty"`
+	MaxDuration       JSONDuration       `json:"maxDuration"`
+	RiskLevel         RiskLevel          `json:"riskLevel"`
+	Approvers         []string           `json:"approvers"`
+	Action            ActionType         `json:"action"`
+	UserAction        *UserAction        `json:"userAction,omitempty"`
 }
 
 type GrantRequest struct {
@@ -94,7 +121,8 @@ type GrantRequest struct {
 	Requester     string        `json:"requester"`
 	RequesterNode string        `json:"requesterNode"`
 	GrantTypeName string        `json:"grantTypeName"`
-	TargetNodeID  string        `json:"targetNodeID"`
+	TargetNodeID  string        `json:"targetNodeID,omitempty"`
+	TargetUserID  string        `json:"targetUserID,omitempty"`
 	Duration      time.Duration `json:"duration"`
 	Reason        string        `json:"reason"`
 	RequestedAt   time.Time     `json:"requestedAt"`
@@ -108,7 +136,8 @@ type GrantState struct {
 	ExpiresAt    time.Time    `json:"expiresAt"`
 	RevokedBy    string       `json:"revokedBy"`
 	RevokedAt    time.Time    `json:"revokedAt"`
-	OriginalTags []string     `json:"originalTags"`
+	OriginalTags []string     `json:"originalTags,omitempty"`
+	OriginalRole string       `json:"originalRole,omitempty"`
 }
 
 // Workflow signal types
@@ -135,8 +164,17 @@ type ExtendSignal struct {
 // DeviceTagManager signal types
 
 type AddGrantSignal struct {
-	GrantID string   `json:"grantID"`
-	Tags    []string `json:"tags"`
+	GrantID           string             `json:"grantID"`
+	Tags              []string           `json:"tags"`
+	PostureAttributes []PostureAttribute `json:"postureAttributes,omitempty"`
+	RequesterNodeID   string             `json:"requesterNodeID,omitempty"`
+}
+
+// GrantAssets tracks the tags and posture attributes applied by a single grant.
+type GrantAssets struct {
+	Tags              []string           `json:"tags"`
+	PostureAttributes []PostureAttribute `json:"postureAttributes,omitempty"`
+	RequesterNodeID   string             `json:"requesterNodeID,omitempty"`
 }
 
 type RemoveGrantSignal struct {

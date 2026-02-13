@@ -244,6 +244,332 @@ func TestEvaluatePolicy_MediumRisk(t *testing.T) {
 	}
 }
 
+func TestNewYAMLGrantTypeStore_UserRoleAction(t *testing.T) {
+	configs := []config.GrantTypeConfig{
+		{
+			Name:        "temp-admin",
+			Description: "Temporarily elevate user to admin",
+			Action:      "user_role",
+			UserAction:  &config.UserActionConfig{Role: "admin"},
+			MaxDuration: "2h",
+			RiskLevel:   "high",
+			Approvers:   []string{"admin@example.com"},
+		},
+	}
+
+	store, err := NewYAMLGrantTypeStore(configs)
+	if err != nil {
+		t.Fatalf("NewYAMLGrantTypeStore failed: %v", err)
+	}
+
+	gt, err := store.Get("temp-admin")
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if gt.Action != ActionUserRole {
+		t.Errorf("Action = %q, want %q", gt.Action, ActionUserRole)
+	}
+	if gt.UserAction == nil || gt.UserAction.Role != "admin" {
+		t.Errorf("UserAction.Role = %v, want admin", gt.UserAction)
+	}
+	if len(gt.Tags) != 0 {
+		t.Errorf("Tags = %v, want empty for user_role action", gt.Tags)
+	}
+}
+
+func TestNewYAMLGrantTypeStore_UserRestoreAction(t *testing.T) {
+	configs := []config.GrantTypeConfig{
+		{
+			Name:        "temp-restore",
+			Description: "Temporarily restore suspended user",
+			Action:      "user_restore",
+			MaxDuration: "4h",
+			RiskLevel:   "medium",
+			Approvers:   []string{"secops@example.com"},
+		},
+	}
+
+	store, err := NewYAMLGrantTypeStore(configs)
+	if err != nil {
+		t.Fatalf("NewYAMLGrantTypeStore failed: %v", err)
+	}
+
+	gt, err := store.Get("temp-restore")
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if gt.Action != ActionUserRestore {
+		t.Errorf("Action = %q, want %q", gt.Action, ActionUserRestore)
+	}
+}
+
+func TestNewYAMLGrantTypeStore_UserRoleMissingConfig(t *testing.T) {
+	configs := []config.GrantTypeConfig{
+		{
+			Name:        "bad-role",
+			Description: "Missing userAction",
+			Action:      "user_role",
+			MaxDuration: "1h",
+			RiskLevel:   "low",
+		},
+	}
+
+	_, err := NewYAMLGrantTypeStore(configs)
+	if err == nil {
+		t.Fatal("expected error for user_role action without userAction.role")
+	}
+	if !strings.Contains(err.Error(), "user_role action requires userAction.role") {
+		t.Errorf("error = %q, want to contain 'user_role action requires userAction.role'", err.Error())
+	}
+}
+
+func TestNewYAMLGrantTypeStore_UserRoleInvalidRole(t *testing.T) {
+	configs := []config.GrantTypeConfig{
+		{
+			Name:        "bad-role-value",
+			Description: "Invalid role value",
+			Action:      "user_role",
+			UserAction:  &config.UserActionConfig{Role: "superadmin"},
+			MaxDuration: "1h",
+			RiskLevel:   "low",
+		},
+	}
+
+	_, err := NewYAMLGrantTypeStore(configs)
+	if err == nil {
+		t.Fatal("expected error for invalid role value")
+	}
+	if !strings.Contains(err.Error(), "invalid role") {
+		t.Errorf("error = %q, want to contain 'invalid role'", err.Error())
+	}
+}
+
+func TestNewYAMLGrantTypeStore_UnknownAction(t *testing.T) {
+	configs := []config.GrantTypeConfig{
+		{
+			Name:        "bad-action",
+			Description: "Unknown action",
+			Action:      "delete_user",
+			MaxDuration: "1h",
+			RiskLevel:   "low",
+		},
+	}
+
+	_, err := NewYAMLGrantTypeStore(configs)
+	if err == nil {
+		t.Fatal("expected error for unknown action")
+	}
+	if !strings.Contains(err.Error(), "unknown action") {
+		t.Errorf("error = %q, want to contain 'unknown action'", err.Error())
+	}
+}
+
+func TestNewYAMLGrantTypeStore_DefaultActionIsTag(t *testing.T) {
+	configs := []config.GrantTypeConfig{
+		{
+			Name:        "default-action",
+			Description: "No action specified",
+			Tags:        []string{"tag:test"},
+			MaxDuration: "1h",
+			RiskLevel:   "low",
+		},
+	}
+
+	store, err := NewYAMLGrantTypeStore(configs)
+	if err != nil {
+		t.Fatalf("NewYAMLGrantTypeStore failed: %v", err)
+	}
+
+	gt, _ := store.Get("default-action")
+	if gt.Action != ActionTag {
+		t.Errorf("Action = %q, want %q for default", gt.Action, ActionTag)
+	}
+}
+
+func TestNewYAMLGrantTypeStore_PostureAttributesOnly(t *testing.T) {
+	configs := []config.GrantTypeConfig{
+		{
+			Name:        "posture-only",
+			Description: "Grant with only posture attributes, no tags",
+			PostureAttributes: []config.PostureAttributeConfig{
+				{Key: "custom:jit-ssh", Value: "granted", Target: "requester"},
+			},
+			MaxDuration: "4h",
+			RiskLevel:   "low",
+		},
+	}
+
+	store, err := NewYAMLGrantTypeStore(configs)
+	if err != nil {
+		t.Fatalf("NewYAMLGrantTypeStore failed: %v", err)
+	}
+
+	gt, err := store.Get("posture-only")
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if len(gt.Tags) != 0 {
+		t.Errorf("Tags = %v, want empty", gt.Tags)
+	}
+	if len(gt.PostureAttributes) != 1 {
+		t.Fatalf("PostureAttributes = %v, want 1 attribute", gt.PostureAttributes)
+	}
+	pa := gt.PostureAttributes[0]
+	if pa.Key != "custom:jit-ssh" {
+		t.Errorf("PostureAttributes[0].Key = %q, want %q", pa.Key, "custom:jit-ssh")
+	}
+	if pa.Value != "granted" {
+		t.Errorf("PostureAttributes[0].Value = %v, want %q", pa.Value, "granted")
+	}
+	if pa.Target != "requester" {
+		t.Errorf("PostureAttributes[0].Target = %q, want %q", pa.Target, "requester")
+	}
+}
+
+func TestNewYAMLGrantTypeStore_PostureAttributeInvalidKey(t *testing.T) {
+	configs := []config.GrantTypeConfig{
+		{
+			Name:        "bad-posture-key",
+			Description: "Posture attribute key missing custom: prefix",
+			PostureAttributes: []config.PostureAttributeConfig{
+				{Key: "jit-ssh", Value: "granted"},
+			},
+			MaxDuration: "1h",
+			RiskLevel:   "low",
+		},
+	}
+
+	_, err := NewYAMLGrantTypeStore(configs)
+	if err == nil {
+		t.Fatal("expected error for posture attribute key without custom: prefix")
+	}
+	if !strings.Contains(err.Error(), "must start with \"custom:\"") {
+		t.Errorf("error = %q, want to contain 'must start with \"custom:\"'", err.Error())
+	}
+}
+
+func TestNewYAMLGrantTypeStore_PostureAttributeInvalidTarget(t *testing.T) {
+	configs := []config.GrantTypeConfig{
+		{
+			Name:        "bad-posture-target",
+			Description: "Posture attribute with invalid target",
+			PostureAttributes: []config.PostureAttributeConfig{
+				{Key: "custom:test", Value: "v", Target: "both"},
+			},
+			MaxDuration: "1h",
+			RiskLevel:   "low",
+		},
+	}
+
+	_, err := NewYAMLGrantTypeStore(configs)
+	if err == nil {
+		t.Fatal("expected error for posture attribute with invalid target")
+	}
+	if !strings.Contains(err.Error(), "invalid target") {
+		t.Errorf("error = %q, want to contain 'invalid target'", err.Error())
+	}
+}
+
+func TestNewYAMLGrantTypeStore_PostureAttributeDefaultTarget(t *testing.T) {
+	configs := []config.GrantTypeConfig{
+		{
+			Name:        "default-target",
+			Description: "Posture attribute with no target specified",
+			PostureAttributes: []config.PostureAttributeConfig{
+				{Key: "custom:test", Value: "v"},
+			},
+			MaxDuration: "1h",
+			RiskLevel:   "low",
+		},
+	}
+
+	store, err := NewYAMLGrantTypeStore(configs)
+	if err != nil {
+		t.Fatalf("NewYAMLGrantTypeStore failed: %v", err)
+	}
+
+	gt, _ := store.Get("default-target")
+	if gt.PostureAttributes[0].Target != "requester" {
+		t.Errorf("Target = %q, want %q (should default to requester)", gt.PostureAttributes[0].Target, "requester")
+	}
+}
+
+func TestNewYAMLGrantTypeStore_PostureAttributeNilValue(t *testing.T) {
+	configs := []config.GrantTypeConfig{
+		{
+			Name:        "nil-value",
+			Description: "Posture attribute with nil value",
+			PostureAttributes: []config.PostureAttributeConfig{
+				{Key: "custom:test"},
+			},
+			MaxDuration: "1h",
+			RiskLevel:   "low",
+		},
+	}
+
+	_, err := NewYAMLGrantTypeStore(configs)
+	if err == nil {
+		t.Fatal("expected error for posture attribute with nil value")
+	}
+	if !strings.Contains(err.Error(), "must have a value") {
+		t.Errorf("error = %q, want to contain 'must have a value'", err.Error())
+	}
+}
+
+func TestNewYAMLGrantTypeStore_TagsAndPostureAttributes(t *testing.T) {
+	configs := []config.GrantTypeConfig{
+		{
+			Name:        "combined",
+			Description: "Grant with both tags and posture attributes",
+			Tags:        []string{"tag:ssh-granted"},
+			PostureAttributes: []config.PostureAttributeConfig{
+				{Key: "custom:jit-ssh", Value: "granted", Target: "requester"},
+				{Key: "custom:jit-level", Value: "admin", Target: "target"},
+			},
+			MaxDuration: "4h",
+			RiskLevel:   "low",
+		},
+	}
+
+	store, err := NewYAMLGrantTypeStore(configs)
+	if err != nil {
+		t.Fatalf("NewYAMLGrantTypeStore failed: %v", err)
+	}
+
+	gt, _ := store.Get("combined")
+	if len(gt.Tags) != 1 || gt.Tags[0] != "tag:ssh-granted" {
+		t.Errorf("Tags = %v, want [tag:ssh-granted]", gt.Tags)
+	}
+	if len(gt.PostureAttributes) != 2 {
+		t.Fatalf("PostureAttributes = %v, want 2 attributes", gt.PostureAttributes)
+	}
+	if gt.PostureAttributes[0].Target != "requester" {
+		t.Errorf("PostureAttributes[0].Target = %q, want %q", gt.PostureAttributes[0].Target, "requester")
+	}
+	if gt.PostureAttributes[1].Target != "target" {
+		t.Errorf("PostureAttributes[1].Target = %q, want %q", gt.PostureAttributes[1].Target, "target")
+	}
+}
+
+func TestNewYAMLGrantTypeStore_NoTagsNoPostureAttributes(t *testing.T) {
+	configs := []config.GrantTypeConfig{
+		{
+			Name:        "empty-grant",
+			Description: "Grant with no tags and no posture attributes",
+			MaxDuration: "1h",
+			RiskLevel:   "low",
+		},
+	}
+
+	_, err := NewYAMLGrantTypeStore(configs)
+	if err == nil {
+		t.Fatal("expected error for grant type with no tags and no posture attributes")
+	}
+	if !strings.Contains(err.Error(), "at least one tag or posture attribute") {
+		t.Errorf("error = %q, want to contain 'at least one tag or posture attribute'", err.Error())
+	}
+}
+
 func TestParseRiskLevel(t *testing.T) {
 	tests := []struct {
 		input string

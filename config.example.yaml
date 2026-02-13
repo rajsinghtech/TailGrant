@@ -29,6 +29,10 @@ grants:
     description: "Temporary SSH access to a target node"
     tags:
       - "tag:ssh-granted"
+    postureAttributes:      # optional posture attributes set on grant activation
+      - key: "custom:jit-ssh"
+        value: "granted"
+        target: "requester" # "requester" (default) or "target"
     maxDuration: "4h"
     riskLevel: "low"        # low | medium | high
     approvers: []           # empty = auto-approve for low risk
@@ -51,3 +55,23 @@ grants:
     riskLevel: "medium"
     approvers:
       - "oncall@example.com"
+
+  # User-based JIT grant types
+
+  - name: "temp-admin"
+    description: "Temporarily elevate user to admin role"
+    action: "user_role"
+    userAction:
+      role: "admin"
+    maxDuration: "2h"
+    riskLevel: "high"
+    approvers:
+      - "admin@example.com"
+
+  - name: "temp-restore"
+    description: "Temporarily restore a suspended user"
+    action: "user_restore"
+    maxDuration: "4h"
+    riskLevel: "medium"
+    approvers:
+      - "secops@example.com"

@@ -15,6 +15,10 @@ func setupWorkflowTestEnv() (*testsuite.TestWorkflowEnvironment, *testsuite.Work
 
 	activities := &Activities{}
 	env.RegisterActivity(activities.SignalWithStartDeviceTagManager)
+	env.RegisterActivity(activities.GetUser)
+	env.RegisterActivity(activities.SetUserRole)
+	env.RegisterActivity(activities.SuspendUser)
+	env.RegisterActivity(activities.RestoreUser)
 	env.RegisterWorkflow(ApprovalWorkflow)
 	env.RegisterWorkflow(DeviceTagManagerWorkflow)
 
@@ -228,4 +232,130 @@ func TestGrantWorkflow_Extend(t *testing.T) {
 	require.NoError(t, env.GetWorkflowResult(&result))
 
 	require.Equal(t, StatusExpired, result.Status)
+}
+
+func TestGrantWorkflow_UserRole_Elevation(t *testing.T) {
+	env, _ := setupWorkflowTestEnv()
+
+	request := GrantRequest{
+		ID:           "grant-role-1",
+		Requester:    "user@example.com",
+		TargetUserID: "user-456",
+		Duration:     1 * time.Minute,
+	}
+
+	grantType := GrantType{
+		Name:       "temp-admin",
+		RiskLevel:  RiskLow,
+		Action:     ActionUserRole,
+		UserAction: &UserAction{Role: "admin"},
+	}
+
+	env.OnActivity("GetUser", mock.Anything, "user-456").Return(&UserInfo{ID: "user-456", Role: "member", Status: "active"}, nil)
+	env.OnActivity("SetUserRole", mock.Anything, "user-456", "admin").Return(nil)
+	env.OnActivity("SetUserRole", mock.Anything, "user-456", "member").Return(nil)
+
+	env.ExecuteWorkflow(GrantWorkflow, request, grantType)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+
+	var result GrantState
+	require.NoError(t, env.GetWorkflowResult(&result))
+
+	require.Equal(t, StatusExpired, result.Status)
+	require.Equal(t, "member", result.OriginalRole)
+}
+
+func TestGrantWorkflow_UserRole_Revoked(t *testing.T) {
+	env, _ := setupWorkflowTestEnv()
+
+	request := GrantRequest{
+		ID:           "grant-role-revoke",
+		Requester:    "user@example.com",
+		TargetUserID: "user-789",
+		Duration:     10 * time.Minute,
+	}
+
+	grantType := GrantType{
+		Name:       "temp-admin",
+		RiskLevel:  RiskLow,
+		Action:     ActionUserRole,
+		UserAction: &UserAction{Role: "admin"},
+	}
+
+	env.OnActivity("GetUser", mock.Anything, "user-789").Return(&UserInfo{ID: "user-789", Role: "member", Status: "active"}, nil)
+	env.OnActivity("SetUserRole", mock.Anything, "user-789", "admin").Return(nil)
+	env.OnActivity("SetUserRole", mock.Anything, "user-789", "member").Return(nil)
+
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow("revoke", RevokeSignal{
+			RevokedBy: "admin@example.com",
+			Reason:    "no longer needed",
+		})
+	}, 30*time.Second)
+
+	env.ExecuteWorkflow(GrantWorkflow, request, grantType)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+
+	var result GrantState
+	require.NoError(t, env.GetWorkflowResult(&result))
+
+	require.Equal(t, StatusRevoked, result.Status)
+	require.Equal(t, "member", result.OriginalRole)
+	require.Equal(t, "admin@example.com", result.RevokedBy)
+}
+
+func TestGrantWorkflow_UserRestore(t *testing.T) {
+	env, _ := setupWorkflowTestEnv()
+
+	request := GrantRequest{
+		ID:           "grant-restore-1",
+		Requester:    "user@example.com",
+		TargetUserID: "user-suspended",
+		Duration:     1 * time.Minute,
+	}
+
+	grantType := GrantType{
+		Name:      "temp-restore",
+		RiskLevel: RiskLow,
+		Action:    ActionUserRestore,
+	}
+
+	env.OnActivity("RestoreUser", mock.Anything, "user-suspended").Return(nil)
+	env.OnActivity("SuspendUser", mock.Anything, "user-suspended").Return(nil)
+
+	env.ExecuteWorkflow(GrantWorkflow, request, grantType)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+
+	var result GrantState
+	require.NoError(t, env.GetWorkflowResult(&result))
+
+	require.Equal(t, StatusExpired, result.Status)
+}
+
+func TestGrantWorkflow_UserRole_NilUserAction(t *testing.T) {
+	env, _ := setupWorkflowTestEnv()
+
+	request := GrantRequest{
+		ID:           "grant-nil-action",
+		Requester:    "user@example.com",
+		TargetUserID: "user-123",
+		Duration:     1 * time.Minute,
+	}
+
+	grantType := GrantType{
+		Name:      "broken-role",
+		RiskLevel: RiskLow,
+		Action:    ActionUserRole,
+	}
+
+	env.ExecuteWorkflow(GrantWorkflow, request, grantType)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.Error(t, env.GetWorkflowError())
 }

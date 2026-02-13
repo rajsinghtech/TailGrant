@@ -291,3 +291,81 @@ tailscale:
 		t.Errorf("Tailnet = %q, want %q (YAML value should be preserved)", cfg.Tailscale.Tailnet, "yaml-tailnet")
 	}
 }
+
+func TestLoad_PostureAttributes(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	configData := `
+temporal:
+  address: "localhost:7233"
+tailscale:
+  hostname: "tailgrant-server"
+grants:
+  - name: "posture-grant"
+    description: "Grant with posture attributes"
+    tags:
+      - "tag:ssh-granted"
+    postureAttributes:
+      - key: "custom:jit-ssh"
+        value: "granted"
+        target: "requester"
+      - key: "custom:jit-level"
+        value: "admin"
+        target: "target"
+    maxDuration: "4h"
+    riskLevel: "low"
+  - name: "posture-only"
+    description: "Grant with only posture attributes"
+    postureAttributes:
+      - key: "custom:access"
+        value: true
+    maxDuration: "1h"
+    riskLevel: "low"
+`
+
+	if err := os.WriteFile(configPath, []byte(configData), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if len(cfg.Grants) != 2 {
+		t.Fatalf("len(Grants) = %d, want 2", len(cfg.Grants))
+	}
+
+	g1 := cfg.Grants[0]
+	if len(g1.PostureAttributes) != 2 {
+		t.Fatalf("Grants[0].PostureAttributes = %v, want 2 items", g1.PostureAttributes)
+	}
+	if g1.PostureAttributes[0].Key != "custom:jit-ssh" {
+		t.Errorf("PostureAttributes[0].Key = %q, want %q", g1.PostureAttributes[0].Key, "custom:jit-ssh")
+	}
+	if g1.PostureAttributes[0].Value != "granted" {
+		t.Errorf("PostureAttributes[0].Value = %v, want %q", g1.PostureAttributes[0].Value, "granted")
+	}
+	if g1.PostureAttributes[0].Target != "requester" {
+		t.Errorf("PostureAttributes[0].Target = %q, want %q", g1.PostureAttributes[0].Target, "requester")
+	}
+	if g1.PostureAttributes[1].Target != "target" {
+		t.Errorf("PostureAttributes[1].Target = %q, want %q", g1.PostureAttributes[1].Target, "target")
+	}
+
+	g2 := cfg.Grants[1]
+	if len(g2.Tags) != 0 {
+		t.Errorf("Grants[1].Tags = %v, want empty", g2.Tags)
+	}
+	if len(g2.PostureAttributes) != 1 {
+		t.Fatalf("Grants[1].PostureAttributes = %v, want 1 item", g2.PostureAttributes)
+	}
+	if g2.PostureAttributes[0].Key != "custom:access" {
+		t.Errorf("PostureAttributes[0].Key = %q, want %q", g2.PostureAttributes[0].Key, "custom:access")
+	}
+	// YAML parses unquoted true as bool
+	if g2.PostureAttributes[0].Value != true {
+		t.Errorf("PostureAttributes[0].Value = %v (%T), want bool true", g2.PostureAttributes[0].Value, g2.PostureAttributes[0].Value)
+	}
+}

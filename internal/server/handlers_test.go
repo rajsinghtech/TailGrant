@@ -52,6 +52,7 @@ func newMockGrantTypeStore() *mockGrantTypeStore {
 				MaxDuration: grant.JSONDuration(2 * time.Hour),
 				RiskLevel:   grant.RiskMedium,
 				Approvers:   []string{"admin@example.com"},
+				Action:      grant.ActionTag,
 			},
 			"db-access": {
 				Name:        "db-access",
@@ -60,6 +61,24 @@ func newMockGrantTypeStore() *mockGrantTypeStore {
 				MaxDuration: grant.JSONDuration(1 * time.Hour),
 				RiskLevel:   grant.RiskHigh,
 				Approvers:   []string{"admin@example.com", "dba@example.com"},
+				Action:      grant.ActionTag,
+			},
+			"temp-admin": {
+				Name:        "temp-admin",
+				Description: "Temporarily elevate user to admin",
+				MaxDuration: grant.JSONDuration(2 * time.Hour),
+				RiskLevel:   grant.RiskHigh,
+				Approvers:   []string{"admin@example.com"},
+				Action:      grant.ActionUserRole,
+				UserAction:  &grant.UserAction{Role: "admin"},
+			},
+			"temp-restore": {
+				Name:        "temp-restore",
+				Description: "Temporarily restore suspended user",
+				MaxDuration: grant.JSONDuration(4 * time.Hour),
+				RiskLevel:   grant.RiskMedium,
+				Approvers:   []string{"secops@example.com"},
+				Action:      grant.ActionUserRestore,
 			},
 		},
 	}
@@ -98,8 +117,8 @@ func TestHandleListGrantTypes(t *testing.T) {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	if len(types) != 2 {
-		t.Errorf("expected 2 grant types, got %d", len(types))
+	if len(types) != 4 {
+		t.Errorf("expected 4 grant types, got %d", len(types))
 	}
 }
 
@@ -380,6 +399,124 @@ func TestHandleRevokeGrant_MissingIdentity(t *testing.T) {
 
 	if resp["error"] != "missing identity" {
 		t.Errorf("expected error %q, got %q", "missing identity", resp["error"])
+	}
+}
+
+func TestHandleCreateGrant_TagGrant_MissingTargetNodeID(t *testing.T) {
+	handlers := &Handlers{
+		GrantTypes: newMockGrantTypeStore(),
+	}
+
+	body := map[string]string{
+		"grantTypeName": "ssh-access",
+		"duration":      "1h",
+		"reason":        "Test reason",
+	}
+	bodyBytes, _ := json.Marshal(body)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/grants", bytes.NewReader(bodyBytes))
+	req = withWhoIs(req, "user@example.com", "node-123")
+	w := httptest.NewRecorder()
+
+	handlers.HandleCreateGrant(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp["error"] != "targetNodeID is required for tag grants" {
+		t.Errorf("expected error about missing targetNodeID, got %q", resp["error"])
+	}
+}
+
+func TestHandleCreateGrant_UserGrant_MissingTargetUserID(t *testing.T) {
+	handlers := &Handlers{
+		GrantTypes: newMockGrantTypeStore(),
+	}
+
+	body := map[string]string{
+		"grantTypeName": "temp-admin",
+		"duration":      "1h",
+		"reason":        "Need admin access",
+	}
+	bodyBytes, _ := json.Marshal(body)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/grants", bytes.NewReader(bodyBytes))
+	req = withWhoIs(req, "user@example.com", "node-123")
+	w := httptest.NewRecorder()
+
+	handlers.HandleCreateGrant(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp["error"] != "targetUserID is required for user grants" {
+		t.Errorf("expected error about missing targetUserID, got %q", resp["error"])
+	}
+}
+
+func TestHandleCreateGrant_UserRestoreGrant_MissingTargetUserID(t *testing.T) {
+	handlers := &Handlers{
+		GrantTypes: newMockGrantTypeStore(),
+	}
+
+	body := map[string]string{
+		"grantTypeName": "temp-restore",
+		"duration":      "2h",
+		"reason":        "Restore suspended user",
+	}
+	bodyBytes, _ := json.Marshal(body)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/grants", bytes.NewReader(bodyBytes))
+	req = withWhoIs(req, "user@example.com", "node-123")
+	w := httptest.NewRecorder()
+
+	handlers.HandleCreateGrant(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp["error"] != "targetUserID is required for user grants" {
+		t.Errorf("expected error about missing targetUserID, got %q", resp["error"])
+	}
+}
+
+func TestHandleListUsers_NilClient(t *testing.T) {
+	handlers := &Handlers{}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/users", nil)
+	w := httptest.NewRecorder()
+
+	handlers.HandleListUsers(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected status %d, got %d", http.StatusInternalServerError, w.Code)
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp["error"] != "tailscale API client not configured" {
+		t.Errorf("expected error about unconfigured client, got %q", resp["error"])
 	}
 }
 

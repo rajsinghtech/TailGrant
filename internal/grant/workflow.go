@@ -47,19 +47,48 @@ func GrantWorkflow(ctx workflow.Context, request GrantRequest, grantType GrantTy
 		state.ApprovedBy = result.ApprovedBy
 	}
 
-	// Start (if needed) and signal the DeviceTagManager to add this grant's tags.
-	// Uses SignalWithStartWorkflow to atomically create the workflow if it
-	// doesn't exist yet, avoiding the race where SignalExternalWorkflow
-	// fails because no DeviceTagManager is running for this device.
 	var activities *Activities
 	taskQueue := workflow.GetInfo(ctx).TaskQueueName
-	if err := workflow.ExecuteActivity(actCtx, activities.SignalWithStartDeviceTagManager, request.TargetNodeID, taskQueue, AddGrantSignal{
-		GrantID: request.ID,
-		Tags:    grantType.Tags,
-	}).Get(ctx, nil); err != nil {
-		return state, fmt.Errorf("signal-with-start tag manager: %w", err)
+	action := grantType.Action
+	if action == "" {
+		action = ActionTag
 	}
-	tagMgrID := fmt.Sprintf("device-tags-%s", request.TargetNodeID)
+
+	// Activate phase: apply the grant's effect based on action type.
+	var tagMgrID string
+	switch action {
+	case ActionTag:
+		if err := workflow.ExecuteActivity(actCtx, activities.SignalWithStartDeviceTagManager, request.TargetNodeID, taskQueue, AddGrantSignal{
+			GrantID:           request.ID,
+			Tags:              grantType.Tags,
+			PostureAttributes: grantType.PostureAttributes,
+			RequesterNodeID:   request.RequesterNode,
+		}).Get(ctx, nil); err != nil {
+			return state, fmt.Errorf("signal-with-start tag manager: %w", err)
+		}
+		tagMgrID = fmt.Sprintf("device-tags-%s", request.TargetNodeID)
+
+	case ActionUserRole:
+		if grantType.UserAction == nil {
+			return state, fmt.Errorf("user_role grant type %q missing userAction config", grantType.Name)
+		}
+		var user UserInfo
+		if err := workflow.ExecuteActivity(actCtx, activities.GetUser, request.TargetUserID).Get(ctx, &user); err != nil {
+			return state, fmt.Errorf("get user for role elevation: %w", err)
+		}
+		state.OriginalRole = user.Role
+		targetRole := grantType.UserAction.Role
+		if err := workflow.ExecuteActivity(actCtx, activities.SetUserRole, request.TargetUserID, targetRole).Get(ctx, nil); err != nil {
+			return state, fmt.Errorf("set user role to %s: %w", targetRole, err)
+		}
+		logger.Info("User role elevated", "userID", request.TargetUserID, "from", user.Role, "to", targetRole)
+
+	case ActionUserRestore:
+		if err := workflow.ExecuteActivity(actCtx, activities.RestoreUser, request.TargetUserID).Get(ctx, nil); err != nil {
+			return state, fmt.Errorf("restore user: %w", err)
+		}
+		logger.Info("User restored", "userID", request.TargetUserID)
+	}
 
 	// Activate the grant
 	now := workflow.Now(ctx)
@@ -113,12 +142,30 @@ func GrantWorkflow(ctx workflow.Context, request GrantRequest, grantType GrantTy
 		sel.Select(ctx)
 	}
 
-	// Signal the DeviceTagManager to remove this grant's tags.
-	// The workflow is guaranteed to be running since we just added a grant to it.
-	if err := workflow.SignalExternalWorkflow(ctx, tagMgrID, "", "remove-grant", RemoveGrantSignal{
-		GrantID: request.ID,
-	}).Get(ctx, nil); err != nil {
-		logger.Error("Failed to signal tag manager remove", "grantID", request.ID, "error", err)
+	// Deactivate phase: revert the grant's effect based on action type.
+	switch action {
+	case ActionTag:
+		if err := workflow.SignalExternalWorkflow(ctx, tagMgrID, "", "remove-grant", RemoveGrantSignal{
+			GrantID: request.ID,
+		}).Get(ctx, nil); err != nil {
+			logger.Error("Failed to signal tag manager remove", "grantID", request.ID, "error", err)
+		}
+
+	case ActionUserRole:
+		if state.OriginalRole == "" {
+			logger.Error("Cannot revert user role: originalRole is empty, skipping", "userID", request.TargetUserID)
+		} else if err := workflow.ExecuteActivity(actCtx, activities.SetUserRole, request.TargetUserID, state.OriginalRole).Get(ctx, nil); err != nil {
+			logger.Error("Failed to revert user role", "userID", request.TargetUserID, "role", state.OriginalRole, "error", err)
+		} else {
+			logger.Info("User role reverted", "userID", request.TargetUserID, "to", state.OriginalRole)
+		}
+
+	case ActionUserRestore:
+		if err := workflow.ExecuteActivity(actCtx, activities.SuspendUser, request.TargetUserID).Get(ctx, nil); err != nil {
+			logger.Error("Failed to re-suspend user", "userID", request.TargetUserID, "error", err)
+		} else {
+			logger.Info("User re-suspended", "userID", request.TargetUserID)
+		}
 	}
 
 	logger.Info("GrantWorkflow completed", "grantID", request.ID, "status", state.Status)

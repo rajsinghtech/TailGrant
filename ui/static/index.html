@@ -240,8 +240,19 @@ td {
           <option value="">Select...</option>
         </select>
 
-        <label for="target-node">Target Device Node ID</label>
-        <input type="text" id="target-node" placeholder="nXXXXXCNTRL" required>
+        <div id="target-device-wrap">
+          <label for="target-node">Target Device</label>
+          <select id="target-node">
+            <option value="">Select device...</option>
+          </select>
+        </div>
+
+        <div id="target-user-wrap" style="display:none">
+          <label for="target-user">Target User</label>
+          <select id="target-user">
+            <option value="">Select user...</option>
+          </select>
+        </div>
 
         <label for="duration">Duration</label>
         <select id="duration" required>
@@ -271,6 +282,9 @@ td {
 <script>
 const API = '/api';
 let grants = [];
+let deviceMap = {};
+let userMap = {};
+let grantTypeMap = {};
 
 async function api(path, opts) {
   const res = await fetch(API + path, opts);
@@ -303,16 +317,33 @@ function renderGrantTypes(types) {
   const list = document.getElementById('grant-types');
   const sel = document.getElementById('grant-type');
   list.innerHTML = '';
-  // keep the placeholder option
   sel.innerHTML = '<option value="">Select...</option>';
+  grantTypeMap = {};
 
   types.forEach(t => {
+    grantTypeMap[t.name] = t;
+    const action = t.action || 'tag';
+    let metaInfo = 'risk: ' + esc(t.riskLevel) + ' | max: ' + esc(t.maxDuration);
+    if (action === 'tag') {
+      if (t.tags && t.tags.length) {
+        metaInfo += ' | tags: ' + esc(t.tags.join(', '));
+      }
+      if (t.postureAttributes && t.postureAttributes.length) {
+        const paStr = t.postureAttributes.map(pa => pa.key + '=' + pa.value + ' (' + pa.target + ')').join(', ');
+        metaInfo += ' | posture: ' + esc(paStr);
+      }
+    } else if (action === 'user_role') {
+      metaInfo += ' | role: ' + esc((t.userAction || {}).role || '');
+    } else if (action === 'user_restore') {
+      metaInfo += ' | action: restore user';
+    }
+
     const li = document.createElement('li');
     li.className = 'grant-type-item';
     li.innerHTML =
       '<div class="name">' + esc(t.name) + '</div>' +
       '<div class="desc">' + esc(t.description) + '</div>' +
-      '<div class="meta">risk: ' + esc(t.riskLevel) + ' | max: ' + esc(t.maxDuration) + ' | tags: ' + esc((t.tags || []).join(', ')) + '</div>';
+      '<div class="meta">' + metaInfo + '</div>';
     list.appendChild(li);
 
     const opt = document.createElement('option');
@@ -330,17 +361,24 @@ function renderGrants(data) {
   }
 
   let html = '<table><thead><tr>' +
-    '<th>ID</th><th>Type</th><th>Target</th><th>Status</th><th>Requester</th><th>Expires</th><th>Actions</th>' +
+    '<th>ID</th><th>Type</th><th>Target</th><th>Status</th><th>Requester</th><th>Reason</th><th>Expires</th><th>Actions</th>' +
     '</tr></thead><tbody>';
 
   data.forEach(g => {
     const req = g.request || {};
+    let target = '';
+    if (req.targetUserID) {
+      target = userMap[req.targetUserID] || req.targetUserID;
+    } else {
+      target = deviceMap[req.targetNodeID] || req.targetNodeID || '';
+    }
     html += '<tr>' +
       '<td class="mono">' + esc((req.id || '').slice(0, 12)) + '</td>' +
       '<td>' + esc(req.grantTypeName || '') + '</td>' +
-      '<td class="mono">' + esc((req.targetNodeID || '').slice(0, 16)) + '</td>' +
+      '<td class="mono">' + esc(target) + '</td>' +
       '<td>' + badge(g.status || 'unknown') + '</td>' +
       '<td>' + esc(req.requester || '') + '</td>' +
+      '<td>' + esc(req.reason || '') + '</td>' +
       '<td>' + timeStr(g.expiresAt) + '</td>' +
       '<td>' + grantActions(g) + '</td>' +
       '</tr>';
@@ -397,14 +435,33 @@ async function loadUser() {
   }
 }
 
+function isUserAction(gtName) {
+  const gt = grantTypeMap[gtName];
+  if (!gt) return false;
+  const action = gt.action || 'tag';
+  return action === 'user_role' || action === 'user_restore';
+}
+
+document.getElementById('grant-type').addEventListener('change', function() {
+  const userGrant = isUserAction(this.value);
+  document.getElementById('target-device-wrap').style.display = userGrant ? 'none' : '';
+  document.getElementById('target-user-wrap').style.display = userGrant ? '' : 'none';
+});
+
 document.getElementById('request-form').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const gtName = document.getElementById('grant-type').value;
+  const userGrant = isUserAction(gtName);
   const payload = {
-    grantTypeName: document.getElementById('grant-type').value,
-    targetNodeID: document.getElementById('target-node').value,
+    grantTypeName: gtName,
     duration: document.getElementById('duration').value,
     reason: document.getElementById('reason').value,
   };
+  if (userGrant) {
+    payload.targetUserID = document.getElementById('target-user').value;
+  } else {
+    payload.targetNodeID = document.getElementById('target-node').value;
+  }
   try {
     await api('/grants', {
       method: 'POST',
@@ -413,6 +470,8 @@ document.getElementById('request-form').addEventListener('submit', async (e) => 
     });
     toast('Grant requested', 'success');
     document.getElementById('request-form').reset();
+    document.getElementById('target-device-wrap').style.display = '';
+    document.getElementById('target-user-wrap').style.display = 'none';
     loadGrants();
   } catch (e) {
     toast('Error: ' + e.message, 'error');
@@ -457,9 +516,49 @@ async function revokeGrant(id) {
   }
 }
 
+async function loadDevices() {
+  try {
+    const devices = await api('/devices');
+    const sel = document.getElementById('target-node');
+    sel.innerHTML = '<option value="">Select device...</option>';
+    (devices || [])
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      .forEach(d => {
+        deviceMap[d.nodeId] = d.hostname || d.name || d.nodeId;
+        const opt = document.createElement('option');
+        opt.value = d.nodeId;
+        opt.textContent = (d.hostname || d.name || d.nodeId) + ' (' + (d.addresses || [])[0] + ')';
+        sel.appendChild(opt);
+      });
+  } catch (e) {
+    console.error('failed to load devices', e);
+  }
+}
+
+async function loadUsers() {
+  try {
+    const users = await api('/users');
+    const sel = document.getElementById('target-user');
+    sel.innerHTML = '<option value="">Select user...</option>';
+    (users || [])
+      .sort((a, b) => (a.loginName || '').localeCompare(b.loginName || ''))
+      .forEach(u => {
+        userMap[u.id] = u.loginName || u.displayName || u.id;
+        const opt = document.createElement('option');
+        opt.value = u.id;
+        opt.textContent = (u.displayName || u.loginName || u.id) + ' (' + (u.loginName || '') + ')';
+        sel.appendChild(opt);
+      });
+  } catch (e) {
+    console.error('failed to load users', e);
+  }
+}
+
 // Init
 loadUser();
 loadGrantTypes();
+loadDevices();
+loadUsers();
 loadGrants();
 setInterval(loadGrants, 5000);
 </script>

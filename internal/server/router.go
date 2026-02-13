@@ -29,6 +29,7 @@ func NewRouter(lc *local.Client, tc client.Client, tsClient *tailscale.Client, g
 	api.HandleFunc("GET /api/grants/{id}", h.HandleGetGrant)
 	api.HandleFunc("GET /api/grant-types", h.HandleListGrantTypes)
 	api.HandleFunc("GET /api/devices", h.HandleListDevices)
+	api.HandleFunc("GET /api/users", h.HandleListUsers)
 	api.HandleFunc("GET /api/grants", h.HandleListGrants)
 	api.HandleFunc("GET /api/whoami", h.HandleWhoAmI)
 	api.HandleFunc("POST /api/grants/{id}/extend", h.HandleExtendGrant)

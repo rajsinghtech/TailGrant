@@ -24,6 +24,7 @@ type Handlers struct {
 type createGrantRequest struct {
 	GrantTypeName string `json:"grantTypeName"`
 	TargetNodeID  string `json:"targetNodeID"`
+	TargetUserID  string `json:"targetUserID"`
 	Duration      string `json:"duration"`
 	Reason        string `json:"reason"`
 }
@@ -61,10 +62,33 @@ func (h *Handlers) HandleCreateGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.TSClient != nil {
-		if _, err := h.TSClient.Devices().Get(r.Context(), req.TargetNodeID); err != nil {
-			writeError(w, http.StatusBadRequest, "target device not found: "+err.Error())
+	action := gt.Action
+	if action == "" {
+		action = grant.ActionTag
+	}
+
+	switch action {
+	case grant.ActionTag:
+		if req.TargetNodeID == "" {
+			writeError(w, http.StatusBadRequest, "targetNodeID is required for tag grants")
 			return
+		}
+		if h.TSClient != nil {
+			if _, err := h.TSClient.Devices().Get(r.Context(), req.TargetNodeID); err != nil {
+				writeError(w, http.StatusBadRequest, "target device not found: "+err.Error())
+				return
+			}
+		}
+	case grant.ActionUserRole, grant.ActionUserRestore:
+		if req.TargetUserID == "" {
+			writeError(w, http.StatusBadRequest, "targetUserID is required for user grants")
+			return
+		}
+		if h.TSClient != nil {
+			if _, err := h.TSClient.Users().Get(r.Context(), req.TargetUserID); err != nil {
+				writeError(w, http.StatusBadRequest, "target user not found: "+err.Error())
+				return
+			}
 		}
 	}
 
@@ -75,6 +99,7 @@ func (h *Handlers) HandleCreateGrant(w http.ResponseWriter, r *http.Request) {
 		RequesterNode: string(who.Node.StableID),
 		GrantTypeName: req.GrantTypeName,
 		TargetNodeID:  req.TargetNodeID,
+		TargetUserID:  req.TargetUserID,
 		Duration:      dur,
 		Reason:        req.Reason,
 		RequestedAt:   time.Now(),
@@ -107,7 +132,27 @@ func (h *Handlers) HandleApproveGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.TemporalClient.SignalWorkflow(r.Context(), fmt.Sprintf("approval-%s", id), "", "approve", grant.ApproveSignal{
+	// Query the grant to check for self-approval before signaling.
+	resp, err := h.TemporalClient.QueryWorkflow(r.Context(), fmt.Sprintf("grant-%s", id), "", "status")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to query grant: "+err.Error())
+		return
+	}
+	var state grant.GrantState
+	if err := resp.Get(&state); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to decode grant state: "+err.Error())
+		return
+	}
+	if state.Status != grant.StatusPendingApproval {
+		writeError(w, http.StatusConflict, fmt.Sprintf("grant is %s, not pending approval", state.Status))
+		return
+	}
+	if state.Request.Requester == who.UserProfile.LoginName {
+		writeError(w, http.StatusForbidden, "cannot approve your own grant request")
+		return
+	}
+
+	err = h.TemporalClient.SignalWorkflow(r.Context(), fmt.Sprintf("approval-%s", id), "", "approve", grant.ApproveSignal{
 		ApprovedBy: who.UserProfile.LoginName,
 	})
 	if err != nil {
@@ -221,6 +266,19 @@ func (h *Handlers) HandleListDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, devices)
+}
+
+func (h *Handlers) HandleListUsers(w http.ResponseWriter, r *http.Request) {
+	if h.TSClient == nil {
+		writeError(w, http.StatusInternalServerError, "tailscale API client not configured")
+		return
+	}
+	users, err := h.TSClient.Users().List(r.Context(), nil, nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list users: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, users)
 }
 
 func (h *Handlers) HandleWhoAmI(w http.ResponseWriter, r *http.Request) {

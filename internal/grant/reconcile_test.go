@@ -19,6 +19,8 @@ func setupReconcileTestEnv() (*testsuite.TestWorkflowEnvironment, *testsuite.Wor
 	env.RegisterActivity(activities.SetDeviceTags)
 	env.RegisterActivity(activities.CheckWorkflowExists)
 	env.RegisterActivity(activities.QueryActiveGrants)
+	env.RegisterActivity(activities.GetPostureAttributes)
+	env.RegisterActivity(activities.DeletePostureAttribute)
 
 	return env, testSuite
 }
@@ -36,9 +38,8 @@ func TestReconciliationWorkflow_StaleOrphanedTags(t *testing.T) {
 	env.OnActivity("CheckWorkflowExists", mock.Anything, "device-tags-node-1").Return(false, nil)
 	env.OnActivity("CheckWorkflowExists", mock.Anything, "device-tags-node-3").Return(true, nil)
 	env.OnActivity("SetDeviceTags", mock.Anything, "node-1", []string{"tag:server"}).Return(nil)
-	// node-3 has an active manager; query returns matching grants.
 	env.OnActivity("QueryActiveGrants", mock.Anything, "device-tags-node-3").Return(
-		map[string][]string{"g1": {"tag:admin-granted"}}, nil)
+		map[string]GrantAssets{"g1": {Tags: []string{"tag:admin-granted"}}}, nil)
 
 	input := ReconciliationInput{GrantTags: []string{"tag:ssh-granted", "tag:admin-granted"}}
 	env.ExecuteWorkflow(ReconciliationWorkflow, input)
@@ -85,11 +86,10 @@ func TestReconciliationWorkflow_GrantTagsWithActiveManager(t *testing.T) {
 
 	env.OnActivity("ListDevices", mock.Anything).Return(devices, nil)
 	env.OnActivity("CheckWorkflowExists", mock.Anything, "device-tags-node-managed").Return(true, nil)
-	// Query returns grants that produce exactly the expected tags — no drift.
 	env.OnActivity("QueryActiveGrants", mock.Anything, "device-tags-node-managed").Return(
-		map[string][]string{
-			"g1": {"tag:ssh-granted"},
-			"g2": {"tag:debug-granted"},
+		map[string]GrantAssets{
+			"g1": {Tags: []string{"tag:ssh-granted"}},
+			"g2": {Tags: []string{"tag:debug-granted"}},
 		}, nil)
 
 	input := ReconciliationInput{GrantTags: []string{"tag:ssh-granted", "tag:debug-granted"}}
@@ -125,6 +125,103 @@ func TestReconciliationWorkflow_MultipleStaleDevices(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 
+	err := env.GetWorkflowError()
+	require.Error(t, err)
+	var continueAsNewErr *workflow.ContinueAsNewError
+	require.ErrorAs(t, err, &continueAsNewErr)
+
+	env.AssertExpectations(t)
+}
+
+func TestReconciliationWorkflow_StalePostureAttributes(t *testing.T) {
+	env, _ := setupReconcileTestEnv()
+
+	// Device has no grant tags but has a stale posture attribute and no tag manager.
+	devices := []tailscale.Device{
+		{NodeID: "node-posture", Tags: []string{"tag:server"}},
+	}
+
+	env.OnActivity("ListDevices", mock.Anything).Return(devices, nil)
+	env.OnActivity("GetPostureAttributes", mock.Anything, "node-posture").Return(
+		map[string]any{"custom:jit-ssh": "granted", "node:os": "linux"}, nil)
+	env.OnActivity("CheckWorkflowExists", mock.Anything, "device-tags-node-posture").Return(false, nil)
+	env.OnActivity("DeletePostureAttribute", mock.Anything, "node-posture", "custom:jit-ssh").Return(nil)
+
+	input := ReconciliationInput{
+		GrantPostureKeys: []string{"custom:jit-ssh"},
+	}
+	env.ExecuteWorkflow(ReconciliationWorkflow, input)
+
+	require.True(t, env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	require.Error(t, err)
+	var continueAsNewErr *workflow.ContinueAsNewError
+	require.ErrorAs(t, err, &continueAsNewErr)
+
+	env.AssertExpectations(t)
+}
+
+func TestReconciliationWorkflow_PostureDriftTriggersSync(t *testing.T) {
+	env, _ := setupReconcileTestEnv()
+
+	// Device has a stale posture attribute but the tag manager IS running.
+	// The stale key is NOT in the expected set → should trigger sync.
+	devices := []tailscale.Device{
+		{NodeID: "node-drift", Tags: []string{"tag:server"}},
+	}
+
+	env.OnActivity("ListDevices", mock.Anything).Return(devices, nil)
+	env.OnActivity("GetPostureAttributes", mock.Anything, "node-drift").Return(
+		map[string]any{"custom:jit-ssh": "granted"}, nil)
+	env.OnActivity("CheckWorkflowExists", mock.Anything, "device-tags-node-drift").Return(true, nil)
+	// Active grants have no target-scoped posture attributes.
+	env.OnActivity("QueryActiveGrants", mock.Anything, "device-tags-node-drift").Return(
+		map[string]GrantAssets{
+			"g1": {Tags: []string{}, PostureAttributes: []PostureAttribute{
+				{Key: "custom:jit-ssh", Value: "granted", Target: "requester"},
+			}},
+		}, nil)
+	env.OnSignalExternalWorkflow(mock.Anything, "device-tags-node-drift", "", "sync", mock.Anything).Return(nil)
+
+	input := ReconciliationInput{
+		GrantPostureKeys: []string{"custom:jit-ssh"},
+	}
+	env.ExecuteWorkflow(ReconciliationWorkflow, input)
+
+	require.True(t, env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	require.Error(t, err)
+	var continueAsNewErr *workflow.ContinueAsNewError
+	require.ErrorAs(t, err, &continueAsNewErr)
+
+	env.AssertExpectations(t)
+}
+
+func TestReconciliationWorkflow_PostureMatchNoSync(t *testing.T) {
+	env, _ := setupReconcileTestEnv()
+
+	// Device has a posture attribute that matches active grant's target-scoped posture → no sync.
+	devices := []tailscale.Device{
+		{NodeID: "node-ok", Tags: []string{"tag:server"}},
+	}
+
+	env.OnActivity("ListDevices", mock.Anything).Return(devices, nil)
+	env.OnActivity("GetPostureAttributes", mock.Anything, "node-ok").Return(
+		map[string]any{"custom:jit-access": "true"}, nil)
+	env.OnActivity("CheckWorkflowExists", mock.Anything, "device-tags-node-ok").Return(true, nil)
+	env.OnActivity("QueryActiveGrants", mock.Anything, "device-tags-node-ok").Return(
+		map[string]GrantAssets{
+			"g1": {PostureAttributes: []PostureAttribute{
+				{Key: "custom:jit-access", Value: "true", Target: "target"},
+			}},
+		}, nil)
+
+	input := ReconciliationInput{
+		GrantPostureKeys: []string{"custom:jit-access"},
+	}
+	env.ExecuteWorkflow(ReconciliationWorkflow, input)
+
+	require.True(t, env.IsWorkflowCompleted())
 	err := env.GetWorkflowError()
 	require.Error(t, err)
 	var continueAsNewErr *workflow.ContinueAsNewError
