@@ -24,6 +24,10 @@ grants:
     description: "Temporary SSH access to a target node"
     tags:
       - "tag:ssh-granted"
+    postureAttributes:
+      - key: "custom:jit-ssh"
+        value: "granted"
+        target: "requester"
     maxDuration: "4h"
     riskLevel: "low"
     approvers: []
@@ -32,6 +36,10 @@ grants:
     description: "Full administrative access to a target node"
     tags:
       - "tag:admin-granted"
+    postureAttributes:
+      - key: "custom:jit-admin"
+        value: "granted"
+        target: "requester"
     maxDuration: "2h"
     riskLevel: "high"
     approvers:
@@ -42,7 +50,29 @@ grants:
     description: "Debug-level access for troubleshooting"
     tags:
       - "tag:debug-granted"
+    postureAttributes:
+      - key: "custom:jit-debug"
+        value: "granted"
+        target: "requester"
     maxDuration: "1h"
+    riskLevel: "medium"
+    approvers:
+      - "rajsinghtech@github"
+
+  - name: "temp-admin"
+    description: "Temporarily elevate user to admin role"
+    action: "user_role"
+    userAction:
+      role: "admin"
+    maxDuration: "2h"
+    riskLevel: "high"
+    approvers:
+      - "rajsinghtech@github"
+
+  - name: "temp-restore"
+    description: "Temporarily restore a suspended user"
+    action: "user_restore"
+    maxDuration: "4h"
     riskLevel: "medium"
     approvers:
       - "rajsinghtech@github"
