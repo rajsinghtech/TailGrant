@@ -1,6 +1,6 @@
 # Binaries
-tailgrant-server
-tailgrant-worker
+/tailgrant-server
+/tailgrant-worker
 *.exe
 
 # tsnet state
