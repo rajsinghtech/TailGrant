@@ -73,7 +73,7 @@ func TestGrantWorkflow_RequiresApproval_Approved(t *testing.T) {
 		ApprovedBy: "approver@example.com",
 	}
 
-	env.OnWorkflow("ApprovalWorkflow", mock.Anything, "grant-789", grantType).Return(approvalResult, nil)
+	env.OnWorkflow("ApprovalWorkflow", mock.Anything, "grant-789", grantType, "user@example.com").Return(approvalResult, nil)
 	env.OnActivity("SignalWithStartDeviceTagManager", mock.Anything, "node-999", mock.Anything, mock.Anything).Return(nil)
 
 	env.ExecuteWorkflow(GrantWorkflow, request, grantType)
@@ -110,7 +110,7 @@ func TestGrantWorkflow_RequiresApproval_Denied(t *testing.T) {
 		Reason:   "insufficient justification",
 	}
 
-	env.OnWorkflow("ApprovalWorkflow", mock.Anything, "grant-321", grantType).Return(approvalResult, nil)
+	env.OnWorkflow("ApprovalWorkflow", mock.Anything, "grant-321", grantType, "user@example.com").Return(approvalResult, nil)
 
 	env.ExecuteWorkflow(GrantWorkflow, request, grantType)
 

@@ -8,6 +8,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rajsinghtech/tailgrant/internal/grant"
+	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
 	tailscale "tailscale.com/client/tailscale/v2"
 )
@@ -50,9 +52,20 @@ func (h *Handlers) HandleCreateGrant(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid duration: "+err.Error())
 		return
 	}
-	if dur > gt.MaxDuration {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("duration %s exceeds max %s for grant type %q", dur, gt.MaxDuration, gt.Name))
+	if dur <= 0 {
+		writeError(w, http.StatusBadRequest, "duration must be positive")
 		return
+	}
+	if dur > time.Duration(gt.MaxDuration) {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("duration %s exceeds max %s for grant type %q", dur, time.Duration(gt.MaxDuration), gt.Name))
+		return
+	}
+
+	if h.TSClient != nil {
+		if _, err := h.TSClient.Devices().Get(r.Context(), req.TargetNodeID); err != nil {
+			writeError(w, http.StatusBadRequest, "target device not found: "+err.Error())
+			return
+		}
 	}
 
 	id := uuid.New().String()
@@ -208,6 +221,99 @@ func (h *Handlers) HandleListDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, devices)
+}
+
+func (h *Handlers) HandleWhoAmI(w http.ResponseWriter, r *http.Request) {
+	who := WhoIsFromContext(r.Context())
+	if who == nil {
+		writeError(w, http.StatusUnauthorized, "missing identity")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"login":  who.UserProfile.LoginName,
+		"name":   who.UserProfile.DisplayName,
+		"nodeID": string(who.Node.StableID),
+	})
+}
+
+func (h *Handlers) HandleListGrants(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	resp, err := h.TemporalClient.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
+		Namespace: "default",
+		Query:     "WorkflowType = 'GrantWorkflow'",
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list workflows: "+err.Error())
+		return
+	}
+
+	var grants []grant.GrantState
+	for _, exec := range resp.Executions {
+		wfID := exec.Execution.WorkflowId
+		status := exec.Status
+		if status != enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING &&
+			status != enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED {
+			continue
+		}
+
+		qResp, err := h.TemporalClient.QueryWorkflow(ctx, wfID, "", "status")
+		if err != nil {
+			continue
+		}
+
+		var state grant.GrantState
+		if err := qResp.Get(&state); err != nil {
+			continue
+		}
+		grants = append(grants, state)
+	}
+
+	if grants == nil {
+		grants = []grant.GrantState{}
+	}
+	writeJSON(w, http.StatusOK, grants)
+}
+
+func (h *Handlers) HandleExtendGrant(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	who := WhoIsFromContext(r.Context())
+	if who == nil {
+		writeError(w, http.StatusUnauthorized, "missing identity")
+		return
+	}
+
+	var body struct {
+		Duration string `json:"duration"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	dur, err := time.ParseDuration(body.Duration)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid duration: "+err.Error())
+		return
+	}
+	if dur <= 0 {
+		writeError(w, http.StatusBadRequest, "duration must be positive")
+		return
+	}
+
+	err = h.TemporalClient.SignalWorkflow(r.Context(), fmt.Sprintf("grant-%s", id), "", "extend", grant.ExtendSignal{
+		ExtendedBy: who.UserProfile.LoginName,
+		Duration:   dur,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to signal extend: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"id":     id,
+		"status": "extended",
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

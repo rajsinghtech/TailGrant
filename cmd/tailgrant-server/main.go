@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/rajsinghtech/tailgrant/internal/config"
 	"github.com/rajsinghtech/tailgrant/internal/grant"
@@ -116,8 +117,10 @@ func main() {
 
 	router := server.NewRouter(lc, tc, tsClient, grantStore, cfg.Temporal.TaskQueue, staticFS)
 
+	httpServer := &http.Server{Handler: router}
+
 	go func() {
-		if err := http.Serve(ln, router); err != nil {
+		if err := httpServer.Serve(ln); err != nil && err != http.ErrServerClosed {
 			slog.Error("http server error", "error", err)
 		}
 	}()
@@ -127,6 +130,12 @@ func main() {
 	sig := <-sigCh
 	slog.Info("shutting down", "signal", sig)
 
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		slog.Error("http shutdown error", "error", err)
+	}
+
 	cancel()
-	ln.Close()
 }

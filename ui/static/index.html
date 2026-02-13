@@ -431,7 +431,11 @@ async function approveGrant(id) {
 
 async function denyGrant(id) {
   try {
-    await api('/grants/' + id + '/deny', { method: 'POST' });
+    await api('/grants/' + id + '/deny', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: '' }),
+    });
     toast('Grant denied', 'success');
     loadGrants();
   } catch (e) {
@@ -441,7 +445,11 @@ async function denyGrant(id) {
 
 async function revokeGrant(id) {
   try {
-    await api('/grants/' + id + '/revoke', { method: 'POST' });
+    await api('/grants/' + id + '/revoke', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: '' }),
+    });
     toast('Grant revoked', 'success');
     loadGrants();
   } catch (e) {

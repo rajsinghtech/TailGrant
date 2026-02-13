@@ -47,7 +47,7 @@ func TestNewYAMLGrantTypeStore(t *testing.T) {
 		if len(gt.Tags) != 1 || gt.Tags[0] != "tag:ssh-prod" {
 			t.Errorf("Tags = %v, want [tag:ssh-prod]", gt.Tags)
 		}
-		if gt.MaxDuration != 4*time.Hour {
+		if time.Duration(gt.MaxDuration) != 4*time.Hour {
 			t.Errorf("MaxDuration = %v, want 4h", gt.MaxDuration)
 		}
 		if gt.RiskLevel != RiskHigh {
@@ -66,7 +66,7 @@ func TestNewYAMLGrantTypeStore(t *testing.T) {
 		if gt.Name != "read-only" {
 			t.Errorf("Name = %q, want %q", gt.Name, "read-only")
 		}
-		if gt.MaxDuration != 24*time.Hour {
+		if time.Duration(gt.MaxDuration) != 24*time.Hour {
 			t.Errorf("MaxDuration = %v, want 24h", gt.MaxDuration)
 		}
 		if gt.RiskLevel != RiskLow {
@@ -201,7 +201,7 @@ func TestEvaluatePolicy_LowRisk(t *testing.T) {
 		Name:        "low-risk-grant",
 		Description: "Low risk grant type",
 		Tags:        []string{"tag:safe"},
-		MaxDuration: 1 * time.Hour,
+		MaxDuration: JSONDuration(1 * time.Hour),
 		RiskLevel:   RiskLow,
 		Approvers:   []string{},
 	}
@@ -217,7 +217,7 @@ func TestEvaluatePolicy_HighRisk(t *testing.T) {
 		Name:        "high-risk-grant",
 		Description: "High risk grant type",
 		Tags:        []string{"tag:dangerous"},
-		MaxDuration: 1 * time.Hour,
+		MaxDuration: JSONDuration(1 * time.Hour),
 		RiskLevel:   RiskHigh,
 		Approvers:   []string{"admin1", "admin2"},
 	}
@@ -233,7 +233,7 @@ func TestEvaluatePolicy_MediumRisk(t *testing.T) {
 		Name:        "medium-risk-grant",
 		Description: "Medium risk grant type",
 		Tags:        []string{"tag:moderate"},
-		MaxDuration: 2 * time.Hour,
+		MaxDuration: JSONDuration(2 * time.Hour),
 		RiskLevel:   RiskMedium,
 		Approvers:   []string{"admin"},
 	}

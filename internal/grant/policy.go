@@ -47,7 +47,7 @@ func NewYAMLGrantTypeStore(configs []config.GrantTypeConfig) (*YAMLGrantTypeStor
 			Name:        c.Name,
 			Description: c.Description,
 			Tags:        c.Tags,
-			MaxDuration: dur,
+			MaxDuration: JSONDuration(dur),
 			RiskLevel:   ParseRiskLevel(c.RiskLevel),
 			Approvers:   c.Approvers,
 		}

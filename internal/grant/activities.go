@@ -2,10 +2,12 @@ package grant
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	tailscale "tailscale.com/client/tailscale/v2"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 )
@@ -96,7 +98,11 @@ func (a *Activities) CheckWorkflowExists(ctx context.Context, workflowID string)
 
 	desc, err := a.Temporal.DescribeWorkflowExecution(ctx, workflowID, "")
 	if err != nil {
-		return false, nil
+		var notFound *serviceerror.NotFound
+		if errors.As(err, &notFound) {
+			return false, nil
+		}
+		return false, fmt.Errorf("describe workflow %s: %w", workflowID, err)
 	}
 	status := desc.WorkflowExecutionInfo.Status
 	return status == enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING, nil

@@ -1,6 +1,7 @@
 package grant
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 )
@@ -37,6 +38,38 @@ func ParseRiskLevel(s string) RiskLevel {
 	}
 }
 
+func (r RiskLevel) MarshalJSON() ([]byte, error) {
+	return json.Marshal(r.String())
+}
+
+func (r *RiskLevel) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	*r = ParseRiskLevel(s)
+	return nil
+}
+
+type JSONDuration time.Duration
+
+func (d JSONDuration) MarshalJSON() ([]byte, error) {
+	return json.Marshal(time.Duration(d).String())
+}
+
+func (d *JSONDuration) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	dur, err := time.ParseDuration(s)
+	if err != nil {
+		return err
+	}
+	*d = JSONDuration(dur)
+	return nil
+}
+
 type GrantStatus string
 
 const (
@@ -48,66 +81,66 @@ const (
 )
 
 type GrantType struct {
-	Name        string
-	Description string
-	Tags        []string
-	MaxDuration time.Duration
-	RiskLevel   RiskLevel
-	Approvers   []string
+	Name        string       `json:"name"`
+	Description string       `json:"description"`
+	Tags        []string     `json:"tags"`
+	MaxDuration JSONDuration `json:"maxDuration"`
+	RiskLevel   RiskLevel    `json:"riskLevel"`
+	Approvers   []string     `json:"approvers"`
 }
 
 type GrantRequest struct {
-	ID            string
-	Requester     string // loginName from WhoIs
-	RequesterNode string // nodeID
-	GrantTypeName string
-	TargetNodeID  string
-	Duration      time.Duration
-	Reason        string
-	RequestedAt   time.Time
+	ID            string        `json:"id"`
+	Requester     string        `json:"requester"`
+	RequesterNode string        `json:"requesterNode"`
+	GrantTypeName string        `json:"grantTypeName"`
+	TargetNodeID  string        `json:"targetNodeID"`
+	Duration      time.Duration `json:"duration"`
+	Reason        string        `json:"reason"`
+	RequestedAt   time.Time     `json:"requestedAt"`
 }
 
 type GrantState struct {
-	Request      GrantRequest
-	Status       GrantStatus
-	ApprovedBy   string
-	ActivatedAt  time.Time
-	ExpiresAt    time.Time
-	RevokedBy    string
-	RevokedAt    time.Time
-	OriginalTags []string // tags on device before grant
+	Request      GrantRequest `json:"request"`
+	Status       GrantStatus  `json:"status"`
+	ApprovedBy   string       `json:"approvedBy"`
+	ActivatedAt  time.Time    `json:"activatedAt"`
+	ExpiresAt    time.Time    `json:"expiresAt"`
+	RevokedBy    string       `json:"revokedBy"`
+	RevokedAt    time.Time    `json:"revokedAt"`
+	OriginalTags []string     `json:"originalTags"`
 }
 
 // Workflow signal types
 
 type ApproveSignal struct {
-	ApprovedBy string
+	ApprovedBy string `json:"approvedBy"`
 }
 
 type DenySignal struct {
-	DeniedBy string
-	Reason   string
+	DeniedBy string `json:"deniedBy"`
+	Reason   string `json:"reason"`
 }
 
 type RevokeSignal struct {
-	RevokedBy string
-	Reason    string
+	RevokedBy string `json:"revokedBy"`
+	Reason    string `json:"reason"`
 }
 
 type ExtendSignal struct {
-	ExtendedBy string
-	Duration   time.Duration
+	ExtendedBy string        `json:"extendedBy"`
+	Duration   time.Duration `json:"duration"`
 }
 
 // DeviceTagManager signal types
 
 type AddGrantSignal struct {
-	GrantID string
-	Tags    []string
+	GrantID string   `json:"grantID"`
+	Tags    []string `json:"tags"`
 }
 
 type RemoveGrantSignal struct {
-	GrantID string
+	GrantID string `json:"grantID"`
 }
 
 // SyncSignal triggers the tag manager to re-read current device tags
@@ -115,8 +148,8 @@ type RemoveGrantSignal struct {
 type SyncSignal struct{}
 
 type ApprovalResult struct {
-	Approved   bool
-	ApprovedBy string
-	DeniedBy   string
-	Reason     string
+	Approved   bool   `json:"approved"`
+	ApprovedBy string `json:"approvedBy"`
+	DeniedBy   string `json:"deniedBy"`
+	Reason     string `json:"reason"`
 }

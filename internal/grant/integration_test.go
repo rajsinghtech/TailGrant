@@ -34,7 +34,7 @@ func TestIntegration_FullGrantLifecycle_AutoApprove(t *testing.T) {
 		Name:        "ssh-access",
 		Description: "SSH access to production servers",
 		Tags:        []string{"tag:prod-ssh"},
-		MaxDuration: time.Hour,
+		MaxDuration: JSONDuration(time.Hour),
 		RiskLevel:   RiskLow,
 		Approvers:   []string{},
 	}
@@ -77,13 +77,13 @@ func TestIntegration_FullGrantLifecycle_WithApproval(t *testing.T) {
 		Approved:   true,
 		ApprovedBy: "admin@example.com",
 	}
-	env.OnWorkflow("ApprovalWorkflow", mock.Anything, mock.Anything, mock.Anything).Return(approvalResult, nil)
+	env.OnWorkflow("ApprovalWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(approvalResult, nil)
 
 	grantType := GrantType{
 		Name:        "root-access",
 		Description: "Root access to production servers",
 		Tags:        []string{"tag:prod-root"},
-		MaxDuration: time.Hour,
+		MaxDuration: JSONDuration(time.Hour),
 		RiskLevel:   RiskHigh,
 		Approvers:   []string{"admin@example.com"},
 	}

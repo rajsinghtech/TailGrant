@@ -62,6 +62,19 @@ func ReconciliationWorkflow(ctx workflow.Context, input ReconciliationInput) err
 		}
 
 		if !exists {
+			// Re-check to narrow the TOCTOU race window. A grant workflow
+			// may have started a DeviceTagManager between our first check
+			// and now.
+			var existsNow bool
+			if err := workflow.ExecuteActivity(actCtx, activities.CheckWorkflowExists, tagMgrID).Get(ctx, &existsNow); err != nil {
+				logger.Error("Failed to re-check tag manager workflow", "nodeID", device.NodeID, "error", err)
+				continue
+			}
+			if existsNow {
+				// Tag manager appeared between checks — skip cleanup.
+				logger.Info("Tag manager appeared on re-check, skipping cleanup", "nodeID", device.NodeID)
+				continue
+			}
 			logger.Info("Removing stale grant tags", "nodeID", device.NodeID, "staleTags", grantTags)
 			if err := workflow.ExecuteActivity(cleanupCtx, activities.SetDeviceTags, device.NodeID, otherTags).Get(ctx, nil); err != nil {
 				logger.Error("Failed to remove stale tags", "nodeID", device.NodeID, "error", err)

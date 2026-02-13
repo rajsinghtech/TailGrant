@@ -36,7 +36,7 @@ func GrantWorkflow(ctx workflow.Context, request GrantRequest, grantType GrantTy
 			WorkflowID: fmt.Sprintf("approval-%s", request.ID),
 		})
 		var result ApprovalResult
-		if err := workflow.ExecuteChildWorkflow(childCtx, ApprovalWorkflow, request.ID, grantType).Get(ctx, &result); err != nil {
+		if err := workflow.ExecuteChildWorkflow(childCtx, ApprovalWorkflow, request.ID, grantType, request.Requester).Get(ctx, &result); err != nil {
 			return state, fmt.Errorf("approval workflow: %w", err)
 		}
 		if !result.Approved {
@@ -98,6 +98,12 @@ func GrantWorkflow(ctx workflow.Context, request GrantRequest, grantType GrantTy
 			var sig ExtendSignal
 			ch.Receive(ctx, &sig)
 			timerCancel()
+
+			maxDur := time.Duration(grantType.MaxDuration)
+			if maxDur > 0 && sig.Duration > maxDur {
+				sig.Duration = maxDur
+				logger.Info("Extend duration clamped to max", "grantID", request.ID, "maxDuration", maxDur)
+			}
 
 			remaining = sig.Duration
 			state.ExpiresAt = workflow.Now(ctx).Add(sig.Duration)

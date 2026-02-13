@@ -2,6 +2,7 @@ package grant
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"go.temporal.io/sdk/log"
@@ -142,5 +143,6 @@ func computeDesiredTags(currentTags []string, activeGrants map[string][]string, 
 	for t := range seen {
 		result = append(result, t)
 	}
+	sort.Strings(result)
 	return result
 }
