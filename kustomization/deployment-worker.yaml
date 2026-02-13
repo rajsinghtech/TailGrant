@@ -17,6 +17,11 @@ spec:
         app.kubernetes.io/name: tailgrant-worker
     spec:
       serviceAccountName: tailscale
+      securityContext:
+        fsGroup: 65532
+        runAsUser: 65532
+        runAsGroup: 65532
+        runAsNonRoot: true
       imagePullSecrets:
         - name: zot-pull-secret
       containers:
@@ -48,7 +53,7 @@ spec:
               mountPath: /etc/tailgrant
               readOnly: true
             - name: tsnet-state
-              mountPath: /var/lib/tailgrant/tsnet
+              mountPath: /var/lib/tailgrant
       terminationGracePeriodSeconds: 30
       volumes:
         - name: config
