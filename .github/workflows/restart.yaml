@@ -1,10 +1,6 @@
 name: Restart TailGrant
 
 on:
-  push:
-    branches: ["main"]
-    paths:
-      - "kustomization/**"
   workflow_run:
     workflows: ["Build & Push TailGrant Image"]
     types: [completed]
