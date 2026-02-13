@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -48,18 +49,12 @@ func main() {
 		cfg.Tailscale.Tailnet,
 	)
 
-	authKey, err := tsapi.CreateAuthKey(ctx, tsClient, cfg.Worker.Tags, cfg.Worker.Ephemeral)
-	if err != nil {
-		slog.Error("failed to create auth key", "error", err)
-		os.Exit(1)
-	}
-
 	stateDir := cfg.Tailscale.StateDir + "-worker"
 
 	srv := &tsnet.Server{
-		Hostname:  hostname + "-worker",
-		Ephemeral: cfg.Worker.Ephemeral,
-		AuthKey:   authKey,
+		Hostname:     hostname + "-worker",
+		Ephemeral:    cfg.Worker.Ephemeral,
+		ClientSecret: fmt.Sprintf("%s?ephemeral=%t&preauthorized=true", cfg.Tailscale.OAuthClientSecret, cfg.Worker.Ephemeral),
 	}
 	if cfg.Tailscale.StateDir != "" {
 		srv.Dir = stateDir

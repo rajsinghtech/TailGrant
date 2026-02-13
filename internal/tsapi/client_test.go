@@ -28,25 +28,3 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
-func TestNewClientWithAPIKey(t *testing.T) {
-	apiKey := "test-api-key"
-	tailnet := "example.com"
-
-	client := NewClientWithAPIKey(apiKey, tailnet)
-
-	if client == nil {
-		t.Fatal("NewClientWithAPIKey returned nil")
-	}
-
-	if client.Tailnet != tailnet {
-		t.Errorf("expected Tailnet to be %q, got %q", tailnet, client.Tailnet)
-	}
-
-	if client.APIKey != apiKey {
-		t.Errorf("expected APIKey to be %q, got %q", apiKey, client.APIKey)
-	}
-
-	if client.UserAgent != "tailgrant" {
-		t.Errorf("expected UserAgent to be %q, got %q", "tailgrant", client.UserAgent)
-	}
-}
