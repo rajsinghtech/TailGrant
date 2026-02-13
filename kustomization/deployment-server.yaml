@@ -42,6 +42,11 @@ spec:
                 secretKeyRef:
                   name: tailgrant-secrets
                   key: TS_OAUTH_CLIENT_SECRET
+            - name: TS_AUTHKEY
+              valueFrom:
+                secretKeyRef:
+                  name: tailgrant-secrets
+                  key: TS_OAUTH_CLIENT_SECRET
           resources:
             requests:
               cpu: 100m
