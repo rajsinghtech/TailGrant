@@ -40,7 +40,7 @@ type ServerConfig struct {
 type ServiceConfig struct {
 	Name    string   `yaml:"name"`    // VIP service name, e.g. "svc:tailgrant"
 	Port    uint16   `yaml:"port"`    // Port to advertise (e.g. 443)
-	HTTPS   bool     `yaml:"https"`   // Use HTTPS mode (vs raw TCP)
+	HTTPS   bool     `yaml:"https"`   // Terminate TLS on the VIP service
 	Comment string   `yaml:"comment"` // Optional description
 	Tags    []string `yaml:"tags"`    // ACL tags for the VIP service
 }

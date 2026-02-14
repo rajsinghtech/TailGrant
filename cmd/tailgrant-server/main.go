@@ -119,12 +119,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		var mode tsnet.ServiceMode
-		if svcCfg.HTTPS {
-			mode = tsnet.ServiceModeHTTP{Port: svcCfg.Port, HTTPS: true}
-		} else {
-			mode = tsnet.ServiceModeTCP{Port: svcCfg.Port}
-		}
+		mode := tsnet.ServiceModeHTTP{Port: svcCfg.Port, HTTPS: svcCfg.HTTPS}
 		sl, err := srv.ListenService(svcCfg.Name, mode)
 		if err != nil {
 			slog.Error("failed to listen on VIP service", "name", svcCfg.Name, "error", err)
