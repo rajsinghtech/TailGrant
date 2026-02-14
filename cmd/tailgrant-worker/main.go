@@ -8,8 +8,8 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
+	"time"
 
 	"github.com/rajsinghtech/tailgrant/internal/config"
 	"github.com/rajsinghtech/tailgrant/internal/grant"
@@ -71,11 +71,23 @@ func main() {
 	}
 	slog.Info("tsnet is up", "hostname", hostname+"-worker")
 
+	if cfg.Temporal.UseTsnet {
+		dialCtx, dialCancel := context.WithTimeout(ctx, 30*time.Second)
+		conn, err := srv.Dial(dialCtx, "tcp", cfg.Temporal.Address)
+		dialCancel()
+		if err != nil {
+			slog.Error("tsnet cannot reach temporal", "address", cfg.Temporal.Address, "error", err)
+			os.Exit(1)
+		}
+		conn.Close()
+		slog.Info("tsnet connectivity verified", "address", cfg.Temporal.Address)
+	}
+
 	temporalOpts := client.Options{
 		HostPort:  cfg.Temporal.Address,
 		Namespace: cfg.Temporal.Namespace,
 	}
-	if strings.HasSuffix(strings.Split(cfg.Temporal.Address, ":")[0], ".ts.net") {
+	if cfg.Temporal.UseTsnet {
 		slog.Info("using tsnet dialer for temporal", "address", cfg.Temporal.Address)
 		temporalOpts.HostPort = "passthrough:///" + cfg.Temporal.Address
 		temporalOpts.ConnectionOptions = client.ConnectionOptions{
@@ -86,9 +98,9 @@ func main() {
 			},
 		}
 	}
-	tc, err := client.Dial(temporalOpts)
+	tc, err := client.NewLazyClient(temporalOpts)
 	if err != nil {
-		slog.Error("failed to connect to temporal", "error", err)
+		slog.Error("failed to create temporal client", "error", err)
 		os.Exit(1)
 	}
 	defer tc.Close()

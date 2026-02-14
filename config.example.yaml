@@ -1,12 +1,13 @@
 # TailGrant configuration
 
 temporal:
-  address: "temporal.tail1234.ts.net:7233"
+  address: "ottawa-temporal.keiretsu.ts.net:7233"
+  useTsnet: true            # dial Temporal over tailnet via tsnet
   namespace: "default"      # Temporal namespace
   taskQueue: "tailgrant"    # Temporal task queue name
 
 tailscale:
-  hostname: "tailgrant"     # tsnet hostname
+  hostname: "tailgrant-server"     # tsnet hostname
   stateDir: "/var/lib/tailgrant/tsnet"
   # OAuth credentials (worker only, for Tailscale API)
   oauthClientID: ""
@@ -14,10 +15,18 @@ tailscale:
   tailnet: "example.com"    # tailnet name for API calls
 
 server:
-  listenAddr: ":443"
-  useTLS: true              # use tsnet ListenTLS
+  listenAddr: ":80"
+  useTLS: false
   tags:
     - "tag:tailgrant"
+  service:                          # optional: expose as a Tailscale VIP service
+    name: "svc:tailgrant"           # VIP service name
+    port: 443                       # advertised port
+    https: true                     # HTTPS mode (terminates TLS)
+    comment: "TailGrant JIT access" # optional description
+    tags:
+      - "tag:tailgrant"
+
 
 worker:
   ephemeral: true

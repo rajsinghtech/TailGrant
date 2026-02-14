@@ -23,7 +23,7 @@ spec:
         - group: ""
           kind: Service
           name: tailgrant
-          port: 443
+          port: 80
           weight: 1
       matches:
         - path:

@@ -19,6 +19,7 @@ type TemporalConfig struct {
 	Address   string `yaml:"address"`
 	Namespace string `yaml:"namespace"`
 	TaskQueue string `yaml:"taskQueue"`
+	UseTsnet  bool   `yaml:"useTsnet"`
 }
 
 type TailscaleConfig struct {
@@ -30,9 +31,18 @@ type TailscaleConfig struct {
 }
 
 type ServerConfig struct {
-	ListenAddr string   `yaml:"listenAddr"`
-	UseTLS     *bool    `yaml:"useTLS"`
-	Tags       []string `yaml:"tags"`
+	ListenAddr string         `yaml:"listenAddr"`
+	UseTLS     *bool          `yaml:"useTLS"`
+	Tags       []string       `yaml:"tags"`
+	Service    *ServiceConfig `yaml:"service"`
+}
+
+type ServiceConfig struct {
+	Name    string   `yaml:"name"`    // VIP service name, e.g. "svc:tailgrant"
+	Port    uint16   `yaml:"port"`    // Port to advertise (e.g. 443)
+	HTTPS   bool     `yaml:"https"`   // Use HTTPS mode (vs raw TCP)
+	Comment string   `yaml:"comment"` // Optional description
+	Tags    []string `yaml:"tags"`    // ACL tags for the VIP service
 }
 
 type WorkerConfig struct {
@@ -95,11 +105,11 @@ func applyDefaults(cfg *Config) {
 		cfg.Temporal.TaskQueue = "tailgrant"
 	}
 	if cfg.Server.ListenAddr == "" {
-		cfg.Server.ListenAddr = ":443"
+		cfg.Server.ListenAddr = ":80"
 	}
 	if cfg.Server.UseTLS == nil {
-		t := true
-		cfg.Server.UseTLS = &t
+		f := false
+		cfg.Server.UseTLS = &f
 	}
 }
 

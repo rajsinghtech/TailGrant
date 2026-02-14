@@ -4,15 +4,22 @@ temporal:
   taskQueue: "tailgrant"
 
 tailscale:
-  hostname: "tailgrant"
+  hostname: "tailgrant-server"
   stateDir: "/var/lib/tailgrant/tsnet"
   tailnet: "keiretsu.ts.net"
 
 server:
-  listenAddr: ":443"
-  useTLS: true
+  listenAddr: ":80"
+  useTLS: false
   tags:
     - "tag:k8s"
+  service:
+    name: "svc:tailgrant"
+    port: 80
+    https: false
+    comment: "TailGrant JIT access"
+    tags:
+      - "tag:k8s"
 
 worker:
   ephemeral: true

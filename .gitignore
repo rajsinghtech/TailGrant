@@ -19,4 +19,5 @@ tsnet-*/
 coverage.out
 
 # Config
+config.local.yaml
 !config.example.yaml
