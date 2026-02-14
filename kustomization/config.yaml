@@ -1,5 +1,5 @@
 temporal:
-  address: "temporal.keiretsu.ts.net:7233"
+  address: "ottawa-temporal.keiretsu.ts.net:7233"
   useTsnet: true
   namespace: "default"
   taskQueue: "tailgrant"
@@ -25,7 +25,7 @@ server:
 worker:
   ephemeral: true
   tags:
-    - "tag:tailgrant-worker"
+    - "tag:k8s"
 
 grants:
   - name: "ssh-access"
