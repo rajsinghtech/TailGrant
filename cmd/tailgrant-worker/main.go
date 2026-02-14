@@ -79,7 +79,7 @@ func main() {
 			slog.Error("tsnet cannot reach temporal", "address", cfg.Temporal.Address, "error", err)
 			os.Exit(1)
 		}
-		conn.Close()
+		_ = conn.Close()
 		slog.Info("tsnet connectivity verified", "address", cfg.Temporal.Address)
 	}
 
