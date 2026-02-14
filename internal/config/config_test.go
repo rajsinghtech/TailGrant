@@ -200,11 +200,11 @@ tailscale:
 	if cfg.Temporal.TaskQueue != "tailgrant" {
 		t.Errorf("default Temporal.TaskQueue = %q, want %q", cfg.Temporal.TaskQueue, "tailgrant")
 	}
-	if cfg.Server.ListenAddr != ":443" {
-		t.Errorf("default Server.ListenAddr = %q, want %q", cfg.Server.ListenAddr, ":443")
+	if cfg.Server.ListenAddr != ":80" {
+		t.Errorf("default Server.ListenAddr = %q, want %q", cfg.Server.ListenAddr, ":80")
 	}
-	if cfg.Server.UseTLS == nil || *cfg.Server.UseTLS != true {
-		t.Errorf("default Server.UseTLS = %v, want true", cfg.Server.UseTLS)
+	if cfg.Server.UseTLS == nil || *cfg.Server.UseTLS != false {
+		t.Errorf("default Server.UseTLS = %v, want false", cfg.Server.UseTLS)
 	}
 }
 
